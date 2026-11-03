@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Données locales et secrets
+config.json
+blink_auth.json
+blink2temp.log
+temperatures.db
+*.db-journal
+*.db-wal
+*.db-shm
+export_*.csv
+.env
+
+# Android
+android/.gradle/
+android/.idea/
+android/local.properties
+android/**/build/
+android/release/
+android/captures/
+android/*.iml
+*.keystore
+*.jks
+
+# Bundles et archives produits
+build/
+dist/
+release/
+*.part
+
+# Systèmes
+.DS_Store
+Thumbs.db
+desktop.ini

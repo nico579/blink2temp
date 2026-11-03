@@ -1,0 +1,125 @@
+name: CI
+
+# Chaque push sur main et chaque pull request testent l'application Android
+# (tests JVM, lint, APK et AAB), la suite Python du relevé horaire et la
+# construction des exécutables Windows, Linux et macOS.
+# Release ne tourne que sur un tag vX.Y.Z, pour signer et publier.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    name: Version commune
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: VERSION, applicationId et tag
+        run: python android/tools/check_versions.py
+
+  android:
+    name: Android (tests, lint, APK, AAB)
+    needs: versions
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Install Android SDK
+        run: |
+          SDK_MANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDK_MANAGER"
+          "$SDK_MANAGER" 'platforms;android-34' 'build-tools;34.0.0'
+      # Sans clé de projet, Gradle signe avec la clé de débogage standard :
+      # mêmes tâches que Release, sans secret, et des fichiers jamais distribués.
+      - name: Tests, lint, APK et AAB release
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest lintRelease assembleRelease bundleRelease --console=plain --no-daemon --max-workers=2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ci-android
+          path: |
+            android/app/build/reports/
+            android/app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  python:
+    name: Python (relevé horaire)
+    needs: versions
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Dépendances
+        run: python -m pip install -r requirements.txt
+      - name: Tests unitaires
+        run: python test_blink2temp.py
+
+  bundles:
+    name: Bundle (${{ matrix.artifact }})
+    needs: python
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            artifact: windows-x64
+          - runner: ubuntu-22.04
+            artifact: linux-x64
+          - runner: macos-15-intel
+            artifact: macos-x64
+          - runner: macos-14
+            artifact: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Dépendances
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+      - name: Exécutable construit et vérifié
+        run: python tools/build_bundle.py
+      - name: Archive et empreintes
+        run: python tools/package_bundle.py --artifact "${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-bundle-${{ matrix.artifact }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
