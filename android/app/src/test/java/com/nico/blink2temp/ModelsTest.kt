@@ -6,7 +6,6 @@ import com.nico.blink2temp.blink.parseCamera
 import com.nico.blink2temp.blink.parseHomescreen
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,8 +33,8 @@ class ModelsTest {
     fun analyseDeLEcranDAccueil() {
         val cameras = parseHomescreen(homescreen)
 
-        assertEquals(4, cameras.size)
-        assertEquals(listOf("Bureau", "Jardin", "Mini", "Porte"), cameras.map { it.name })
+        assertEquals(3, cameras.size)
+        assertEquals(listOf("Jardin", "Mini", "Porte"), cameras.map { it.name })
 
         val jardin = cameras.first { it.name == "Jardin" }
         assertEquals("Blink Outdoor", jardin.model)
@@ -47,10 +46,8 @@ class ModelsTest {
         assertEquals("done", jardin.status)
         assertEquals("2026-11-03T10:00:00+00:00", jardin.updatedAt)
 
-        val bureau = cameras.first { it.name == "Bureau" }
-        assertFalse(bureau.outdoor)
-        assertNull(bureau.tempC)
-        assertEquals("Blink Mini", bureau.model)
+        // « Bureau » ne remonte aucune température : il n'est pas affiché.
+        assertNull(cameras.firstOrNull { it.name == "Bureau" })
 
         val porte = cameras.first { it.name == "Porte" }
         assertEquals("Blink Video Doorbell", porte.model)
@@ -72,8 +69,8 @@ class ModelsTest {
     @Test
     fun doublonsDeNomIgnores() {
         val json = """
-            {"cameras":[{"id":1,"name":"Jardin","type":"catalina"}],
-             "owls":[{"id":2,"name":"Jardin","type":"owl"}]}
+            {"cameras":[{"id":1,"name":"Jardin","type":"catalina","signals":{"temp":50}}],
+             "owls":[{"id":2,"name":"Jardin","type":"owl","signals":{"temp":68}}]}
         """.trimIndent()
         val cameras = parseHomescreen(json)
         assertEquals(1, cameras.size)

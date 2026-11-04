@@ -33,8 +33,8 @@ data class CameraInfo(
 )
 
 /**
- * Extrait toutes les caméras de la réponse `/homescreen` (caméras, Minis et
- * sonnettes). Les doublons de nom sont ignorés.
+ * Extrait les caméras de la réponse `/homescreen` (caméras, Minis et
+ * sonnettes) qui remontent une température. Les doublons de nom sont ignorés.
  */
 fun parseHomescreen(body: String): List<CameraInfo> {
     val racine = JSONObject(body)
@@ -44,7 +44,11 @@ fun parseHomescreen(body: String): List<CameraInfo> {
         for (index in 0 until appareils.length()) {
             val objet = appareils.optJSONObject(index) ?: continue
             val camera = parseCamera(objet, groupe)
-            if (camera.name.isNotBlank() && !resultat.containsKey(camera.name)) {
+            if (
+                camera.name.isNotBlank() &&
+                camera.tempC != null &&
+                !resultat.containsKey(camera.name)
+            ) {
                 resultat[camera.name] = camera
             }
         }

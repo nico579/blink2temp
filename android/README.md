@@ -4,7 +4,7 @@ Application Android native de relevé des températures Blink, construite avec
 Kotlin et Jetpack Compose (même pile que le projet `gpx2elev` : Gradle 8.7,
 AGP 8.5.2, Kotlin 1.9.24, compileSdk 34, minSdk 26).
 
-Version : **0.1.3** (`VERSION`), `versionCode` 4.
+Version : **0.1.4** (`VERSION`), `versionCode` 5.
 
 ## Fonctionnalités
 
@@ -17,6 +17,8 @@ Version : **0.1.3** (`VERSION`), `versionCode` 4.
   d'accueil sont listées avec une case à cocher. Seules les caméras cochées
   sont relevées, enregistrées et affichées. La sélection est persistée et
   « Tout / Rien » permet de la modifier rapidement.
+- **Caméras sans température masquées** : seules les caméras qui remontent une
+  température sont listées, relevées et enregistrées.
 - **Relevé passif** : lecture de `GET /api/v3/accounts/{id}/homescreen`, sans
   réveiller les caméras (aucune consommation de pile supplémentaire).
 - **Relevé automatique en arrière-plan** : WorkManager relève les caméras
@@ -27,7 +29,9 @@ Version : **0.1.3** (`VERSION`), `versionCode` 4.
 - **Cartes caméra** : température, modèle, intérieur/extérieur, statut en
   ligne, pile, Wi-Fi et horodatage.
 - **Statistiques et courbe** : min / moyenne / max par caméra sur 6 h, 24 h ou
-  7 jours, avec une courbe multi-caméras.
+  7 jours, avec une courbe multi-caméras. La courbe affiche des graduations
+  avec les valeurs de température, des dates et heures lisibles, et se zoome
+  en pinçant ou se déplace en glissant, comme la page web PC.
 - **Unité unique** : °F pour les territoires qui l'utilisent (États-Unis et
   assimilés), °C sinon, comme la page web.
 - **Mises à jour intégrées** : comme gpx2elev, l'application interroge la
@@ -125,7 +129,7 @@ Créer une version :
 
 ```powershell
 # Mettre VERSION et versionCode à jour, puis :
-git tag v0.1.3
+git tag v0.1.4
 git push origin main --tags
 ```
 

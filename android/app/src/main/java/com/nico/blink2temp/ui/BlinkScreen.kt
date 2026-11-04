@@ -3,6 +3,8 @@ package com.nico.blink2temp.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,19 +56,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nico.blink2temp.UiState
 import com.nico.blink2temp.blink.CameraInfo
+import com.nico.blink2temp.core.Temperature
 import com.nico.blink2temp.core.TemperatureUnit
 import com.nico.blink2temp.data.CameraStats
 import com.nico.blink2temp.data.Reading
@@ -74,6 +85,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.log10
+import kotlin.math.pow
 
 private val Background = Color(0xFF0B1120)
 private val CardColor = Color(0xFF1E293B)
@@ -636,7 +651,8 @@ private fun StatsCard(
                     unit = state.unit,
                     since = since,
                     until = until,
-                    modifier = Modifier.fillMaxWidth().height(170.dp),
+                    windowHours = state.windowHours,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
                 series.forEach { serie ->
@@ -714,63 +730,276 @@ private fun TemperatureChart(
     unit: TemperatureUnit,
     since: Long,
     until: Long,
+    windowHours: Int,
     modifier: Modifier,
 ) {
     val valeurs = series.flatMap { serie -> serie.points.mapNotNull { unit.fromCelsius(it.second) } }
     if (valeurs.isEmpty()) return
 
-    var minV = valeurs.min()
-    var maxV = valeurs.max()
-    if (maxV - minV < 0.5) {
-        minV -= 0.5
-        maxV += 0.5
+    // Fenêtre visible : elle suit la fenêtre complète tant que l'utilisateur
+    // n'a pas zoomé, puis reste fixe lors des relevés suivants.
+    var vueDebut by remember(windowHours) { mutableStateOf(since) }
+    var vueFin by remember(windowHours) { mutableStateOf(until) }
+    var fenetreComplete by remember(windowHours) { mutableStateOf(since to until) }
+
+    LaunchedEffect(since, until) {
+        val (ancienDebut, ancienFin) = fenetreComplete
+        val etaitComplete = vueDebut <= ancienDebut + 1_000L && vueFin >= ancienFin - 1_000L
+        if (etaitComplete) {
+            vueDebut = since
+            vueFin = until
+        } else {
+            val debut = vueDebut.coerceAtLeast(since)
+            val fin = vueFin.coerceAtMost(until)
+            if (fin - debut >= 60_000L) {
+                vueDebut = debut
+                vueFin = fin
+            } else {
+                vueDebut = since
+                vueFin = until
+            }
+        }
+        fenetreComplete = since to until
     }
-    val marge = (maxV - minV) * 0.12
-    minV -= marge
-    maxV += marge
-    val amplitude = (maxV - minV).coerceAtLeast(0.001)
 
-    Canvas(modifier) {
-        val gauche = 4.dp.toPx()
-        val droite = size.width - 4.dp.toPx()
-        val haut = 6.dp.toPx()
-        val bas = size.height - 6.dp.toPx()
+    val dureeComplete = (until - since).coerceAtLeast(1L)
+    val debut = vueDebut.coerceIn(since, until - 1L)
+    val fin = vueFin.coerceIn(debut + 1L, until)
+    val zoomed = fin - debut < dureeComplete
 
-        for (index in 0..4) {
-            val y = haut + (bas - haut) * index / 4f
-            drawLine(Border, Offset(gauche, y), Offset(droite, y), strokeWidth = 1f)
+    val densite = LocalDensity.current
+    val margeGauche = with(densite) { 48.dp.toPx() }
+    val margeDroite = with(densite) { 4.dp.toPx() }
+    var largeurPx by remember { mutableStateOf(0f) }
+    val textMeasurer = rememberTextMeasurer()
+    val styleAxe = TextStyle(color = Muted, fontSize = 9.sp)
+
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (zoomed) {
+                    "Vue zoomée · pincer pour ajuster, glisser pour déplacer"
+                } else {
+                    "Pincer pour zoomer · glisser pour déplacer · double-tap pour tout afficher"
+                },
+                modifier = Modifier.weight(1f),
+                fontSize = 10.sp,
+                color = Muted,
+            )
+            if (zoomed) {
+                Text(
+                    "Réinitialiser",
+                    modifier = Modifier
+                        .clickable {
+                            vueDebut = since
+                            vueFin = until
+                        }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    fontSize = 10.sp,
+                    color = Sky,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
 
-        val duree = (until - since).coerceAtLeast(1L).toFloat()
-        for (serie in series) {
-            val points = serie.points.mapNotNull { (horodatage, tempC) ->
-                val valeur = unit.fromCelsius(tempC) ?: return@mapNotNull null
-                val x = gauche +
-                    ((horodatage - since).toFloat() / duree).coerceIn(0f, 1f) * (droite - gauche)
-                val y = bas -
-                    ((valeur - minV) / amplitude).toFloat().coerceIn(0f, 1f) * (bas - haut)
-                Offset(x, y)
-            }
-            when {
-                points.size == 1 -> drawCircle(serie.color, radius = 3.dp.toPx(), center = points.first())
-                points.size > 1 -> {
-                    val chemin = Path().apply {
-                        moveTo(points.first().x, points.first().y)
-                        for (point in points.drop(1)) lineTo(point.x, point.y)
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .onSizeChanged { largeurPx = it.width.toFloat() }
+                .pointerInput(since, until, windowHours, largeurPx) {
+                    val largeurTrace = (largeurPx - margeGauche - margeDroite).coerceAtLeast(1f)
+                    detectTransformGestures(panZoomLock = true) { centroid, pan, zoom, _ ->
+                        val span = (vueFin - vueDebut).coerceAtLeast(1L)
+                        val fraction = ((centroid.x - margeGauche) / largeurTrace).coerceIn(0f, 1f)
+                        val spanMin = minOf(dureeComplete, 10 * 60_000L)
+                        val nouveauSpan = (span / zoom.coerceAtLeast(0.01f))
+                            .toLong()
+                            .coerceIn(spanMin, dureeComplete)
+                        val ancre = vueDebut + (fraction * span).toLong()
+                        val decalage = (-pan.x / largeurTrace * span).toLong()
+
+                        var nouveauDebut = ancre - (fraction * nouveauSpan).toLong() + decalage
+                        var nouvelleFin = nouveauDebut + nouveauSpan
+                        if (nouveauDebut < since) {
+                            nouveauDebut = since
+                            nouvelleFin = since + nouveauSpan
+                        }
+                        if (nouvelleFin > until) {
+                            nouvelleFin = until
+                            nouveauDebut = until - nouveauSpan
+                        }
+                        vueDebut = nouveauDebut.coerceIn(since, until - 1L)
+                        vueFin = nouvelleFin.coerceIn(vueDebut + 1L, until)
                     }
-                    drawPath(
-                        chemin,
-                        serie.color,
-                        style = Stroke(
-                            width = 2.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round,
-                        ),
+                }
+                .pointerInput(since, until, windowHours) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            vueDebut = since
+                            vueFin = until
+                        },
                     )
+                }
+        ) {
+            val gauche = margeGauche
+            val droite = size.width - margeDroite
+            val haut = 6.dp.toPx()
+            val bas = size.height - 20.dp.toPx()
+            val largeurTrace = (droite - gauche).coerceAtLeast(1f)
+            val hauteurTrace = (bas - haut).coerceAtLeast(1f)
+            val duree = (fin - debut).coerceAtLeast(1L)
+
+            val fenetre = series.flatMap { serie ->
+                serie.points.mapNotNull { (horodatage, tempC) ->
+                    if (horodatage in debut..fin) unit.fromCelsius(tempC) else null
+                }
+            }
+            var minV = fenetre.minOrNull() ?: 0.0
+            var maxV = fenetre.maxOrNull() ?: 30.0
+            if (maxV - minV < 0.5) {
+                minV -= 0.5
+                maxV += 0.5
+            }
+            val marge = (maxV - minV) * 0.12
+            minV -= marge
+            maxV += marge
+
+            val pas = niceStep((maxV - minV) / 4.0)
+            val grilleBas = floor(minV / pas) * pas
+            val grilleHaut = ceil(maxV / pas) * pas
+            val amplitude = (grilleHaut - grilleBas).coerceAtLeast(0.001)
+
+            // Graduations horizontales avec valeurs de température.
+            var indexY = 0
+            while (grilleBas + indexY * pas <= grilleHaut + pas / 2 && indexY < 12) {
+                val valeur = grilleBas + indexY * pas
+                val y = haut + hauteurTrace -
+                    ((valeur - grilleBas) / amplitude * hauteurTrace).toFloat()
+                drawLine(
+                    color = Border,
+                    start = Offset(gauche, y),
+                    end = Offset(droite, y),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
+                )
+                val texte = Temperature.formatValue(valeur) + unit.symbol
+                val mise = textMeasurer.measure(texte, styleAxe)
+                drawText(
+                    textLayoutResult = mise,
+                    topLeft = Offset(
+                        gauche - 6.dp.toPx() - mise.size.width,
+                        y - mise.size.height / 2f,
+                    ),
+                )
+                indexY += 1
+            }
+
+            // Graduations verticales avec dates et heures.
+            val nbX = (largeurTrace / 92.dp.toPx()).toInt().coerceIn(3, 6)
+            for (index in 0..nbX) {
+                val fraction = index / nbX.toFloat()
+                val x = gauche + fraction * largeurTrace
+                val temps = debut + (fraction * duree).toLong()
+                drawLine(
+                    color = Border,
+                    start = Offset(x, haut),
+                    end = Offset(x, bas),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
+                )
+                drawLine(
+                    color = Muted,
+                    start = Offset(x, bas),
+                    end = Offset(x, bas + 4.dp.toPx()),
+                    strokeWidth = 1f,
+                )
+                val mise = textMeasurer.measure(formaterAxeTemps(temps, duree), styleAxe)
+                val xTexte = (x - mise.size.width / 2f)
+                    .coerceIn(gauche, size.width - mise.size.width)
+                drawText(
+                    textLayoutResult = mise,
+                    topLeft = Offset(xTexte, bas + 6.dp.toPx()),
+                )
+            }
+
+            if (fenetre.isEmpty()) {
+                val mise = textMeasurer.measure(
+                    "Aucune mesure sur cette plage",
+                    TextStyle(color = Muted, fontSize = 11.sp),
+                )
+                drawText(
+                    textLayoutResult = mise,
+                    topLeft = Offset(
+                        gauche + (largeurTrace - mise.size.width) / 2f,
+                        haut + (hauteurTrace - mise.size.height) / 2f,
+                    ),
+                )
+                return@Canvas
+            }
+
+            for (serie in series) {
+                val points = serie.points.mapNotNull { (horodatage, tempC) ->
+                    if (horodatage !in debut..fin) return@mapNotNull null
+                    val valeur = unit.fromCelsius(tempC) ?: return@mapNotNull null
+                    val x = gauche +
+                        ((horodatage - debut).toFloat() / duree) * largeurTrace
+                    val y = haut + hauteurTrace -
+                        ((valeur - grilleBas) / amplitude * hauteurTrace).toFloat()
+                    Offset(x, y)
+                }
+                when {
+                    points.size == 1 -> drawCircle(
+                        serie.color,
+                        radius = 3.dp.toPx(),
+                        center = points.first(),
+                    )
+                    points.size > 1 -> {
+                        val chemin = Path().apply {
+                            moveTo(points.first().x, points.first().y)
+                            for (point in points.drop(1)) lineTo(point.x, point.y)
+                        }
+                        drawPath(
+                            chemin,
+                            serie.color,
+                            style = Stroke(
+                                width = 2.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
+                            ),
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** Pas « rond » (1, 2 ou 5 × 10ⁿ) pour des graduations lisibles. */
+private fun niceStep(brut: Double): Double {
+    if (!brut.isFinite() || brut <= 0.0) return 1.0
+    val exposant = floor(log10(brut))
+    val base = 10.0.pow(exposant)
+    val fraction = brut / base
+    val pas = when {
+        fraction <= 1.0 -> 1.0
+        fraction <= 2.0 -> 2.0
+        fraction <= 5.0 -> 5.0
+        else -> 10.0
+    }
+    return pas * base
+}
+
+/** Format des dates de l'axe horizontal, adapté à la durée affichée. */
+private fun formaterAxeTemps(timestamp: Long, dureeMs: Long): String {
+    val date = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault())
+    val motif = when {
+        dureeMs > 7L * 86_400_000L -> "dd/MM"
+        dureeMs > 36L * 3_600_000L -> "dd/MM HH'h'"
+        dureeMs > 10L * 60_000L -> "HH:mm"
+        else -> "HH:mm:ss"
+    }
+    return DateTimeFormatter.ofPattern(motif, Locale.FRENCH).format(date)
 }
 
 @Composable
