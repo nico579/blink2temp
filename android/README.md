@@ -4,13 +4,15 @@ Application Android native de relevé des températures Blink, construite avec
 Kotlin et Jetpack Compose (même pile que le projet `gpx2elev` : Gradle 8.7,
 AGP 8.5.2, Kotlin 1.9.24, compileSdk 34, minSdk 26).
 
-Version : **0.1.0** (`VERSION`), `versionCode` 1.
+Version : **0.1.1** (`VERSION`), `versionCode` 2.
 
 ## Fonctionnalités
 
 - **Connexion Blink native** : OAuth 2 « Authorization Code + PKCE », page de
   connexion HTML, vérification 2FA, échange puis rafraîchissement du jeton.
-  Aucun mot de passe n'est enregistré : seul le jeton Blink est conservé.
+  Aucun mot de passe n'est enregistré : seul le jeton Blink est conservé. Les
+  redirections OAuth sont suivies manuellement pour conserver les cookies de
+  session intermédiaires, et le mot de passe peut être affiché avant l'envoi.
 - **Sélection des caméras à traiter** : les caméras découvertes sur l'écran
   d'accueil sont listées avec une case à cocher. Seules les caméras cochées
   sont relevées, enregistrées et affichées. La sélection est persistée et
@@ -120,7 +122,7 @@ Créer une version :
 
 ```powershell
 # Mettre VERSION et versionCode à jour, puis :
-git tag v0.1.0
+git tag v0.1.1
 git push origin main --tags
 ```
 
