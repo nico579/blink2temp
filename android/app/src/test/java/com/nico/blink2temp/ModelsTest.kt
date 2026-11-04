@@ -1,5 +1,7 @@
 package com.nico.blink2temp
 
+import com.nico.blink2temp.blink.blinkApiHost
+import com.nico.blink2temp.blink.normalizeBlinkHost
 import com.nico.blink2temp.blink.parseCamera
 import com.nico.blink2temp.blink.parseHomescreen
 import org.json.JSONObject
@@ -76,5 +78,26 @@ class ModelsTest {
         val cameras = parseHomescreen(json)
         assertEquals(1, cameras.size)
         assertEquals("catalina", cameras.first().type)
+    }
+
+    @Test
+    fun hoteApiAjouteLePrefixeRest() {
+        assertEquals("rest-prod.immedia-semi.com", blinkApiHost("prod"))
+        assertEquals("rest-eu.immedia-semi.com", blinkApiHost(" eu "))
+        assertEquals("rest-prod.immedia-semi.com", blinkApiHost("rest-prod"))
+        assertEquals("rest-prod.immedia-semi.com", blinkApiHost("rest-prod.immedia-semi.com"))
+        assertEquals("", blinkApiHost("  "))
+    }
+
+    @Test
+    fun hoteMemoriseParUneAncienneVersionEstCorrige() {
+        assertEquals(
+            "rest-prod.immedia-semi.com",
+            normalizeBlinkHost("prod.immedia-semi.com"),
+        )
+        assertEquals(
+            "rest-prod.immedia-semi.com",
+            normalizeBlinkHost("rest-prod.immedia-semi.com"),
+        )
     }
 }

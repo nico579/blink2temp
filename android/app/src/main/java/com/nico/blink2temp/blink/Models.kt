@@ -95,3 +95,25 @@ private fun JSONObject.optIntOrNull(cle: String): Int? = when (val valeur = opt(
     is String -> valeur.toIntOrNull()
     else -> null
 }
+
+/**
+ * Hôte de l'API Blink à partir du tier renvoyé par `tier_info`.
+ *
+ * Blink renvoie par exemple `prod`, alors que l'API est servie par
+ * `rest-prod.immedia-semi.com` : sans le préfixe `rest-`, la résolution DNS
+ * échoue et l'application affiche à tort « Pas de connexion Internet ».
+ */
+fun blinkApiHost(tier: String): String {
+    val valeur = tier.trim().trimEnd('.')
+    if (valeur.isEmpty()) return ""
+    if (valeur.endsWith(".immedia-semi.com")) return normalizeBlinkHost(valeur)
+    val sousDomaine = if (valeur.startsWith("rest-")) valeur else "rest-$valeur"
+    return "$sousDomaine.immedia-semi.com"
+}
+
+/** Corrige un hôte enregistré par une version antérieure (0.1.0 / 0.1.1). */
+fun normalizeBlinkHost(host: String): String {
+    val valeur = host.trim().trimEnd('.')
+    if (valeur.isEmpty()) return ""
+    return if (valeur.startsWith("rest-")) valeur else "rest-$valeur"
+}

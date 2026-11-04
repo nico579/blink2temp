@@ -11,7 +11,7 @@ android {
         applicationId = "com.nico.blink2temp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
+        versionCode = 3
         versionName = rootProject.file("VERSION").readText().trim()
     }
 

@@ -175,7 +175,7 @@ class BlinkClient(
      * Lit l'écran d'accueil : interrogation passive qui ne réveille pas les caméras.
      */
     fun fetchCameras(session: BlinkSession): List<CameraInfo> {
-        val url = "https://${session.host}/api/v3/accounts/${session.accountId}/homescreen"
+        val url = "https://${normalizeBlinkHost(session.host)}/api/v3/accounts/${session.accountId}/homescreen"
         val reponse = transport.get(
             url,
             headers = mapOf(
@@ -286,7 +286,9 @@ class BlinkClient(
         val tier = json.optString("tier").trim()
         val compte = json.opt("account_id")?.toString()?.trim()
         if (tier.isEmpty() || compte.isNullOrEmpty() || compte == "null") return null
-        return "$tier.immedia-semi.com" to compte
+        val hote = blinkApiHost(tier)
+        if (hote.isEmpty()) return null
+        return hote to compte
     }
 
     private fun navigateurEntetes(extra: Map<String, String> = emptyMap()): Map<String, String> =

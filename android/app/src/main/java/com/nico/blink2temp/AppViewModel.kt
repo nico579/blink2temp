@@ -279,7 +279,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun messageLisible(erreur: Exception): String = when (erreur) {
-        is UnknownHostException -> "Pas de connexion Internet. Vérifiez votre réseau."
+        is UnknownHostException -> "Impossible de joindre Blink (serveur introuvable). Vérifiez votre réseau puis réessayez."
         is SocketTimeoutException -> "Blink ne répond pas. Réessayez dans quelques instants."
         else -> erreur.message?.takeIf { it.isNotBlank() }
             ?: "Erreur inattendue (${erreur.javaClass.simpleName})."

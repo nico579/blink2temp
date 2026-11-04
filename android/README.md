@@ -4,7 +4,7 @@ Application Android native de relevé des températures Blink, construite avec
 Kotlin et Jetpack Compose (même pile que le projet `gpx2elev` : Gradle 8.7,
 AGP 8.5.2, Kotlin 1.9.24, compileSdk 34, minSdk 26).
 
-Version : **0.1.1** (`VERSION`), `versionCode` 2.
+Version : **0.1.2** (`VERSION`), `versionCode` 3.
 
 ## Fonctionnalités
 
@@ -122,7 +122,7 @@ Créer une version :
 
 ```powershell
 # Mettre VERSION et versionCode à jour, puis :
-git tag v0.1.1
+git tag v0.1.2
 git push origin main --tags
 ```
 
