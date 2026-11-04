@@ -1,6 +1,7 @@
 package com.nico.blink2temp
 
 import com.nico.blink2temp.blink.blinkApiHost
+import com.nico.blink2temp.blink.cameraSnapPath
 import com.nico.blink2temp.blink.normalizeBlinkHost
 import com.nico.blink2temp.blink.parseCamera
 import com.nico.blink2temp.blink.parseHomescreen
@@ -15,6 +16,7 @@ class ModelsTest {
         {
           "cameras": [
             {"id": 101, "name": "Jardin", "type": "catalina", "battery": "ok", "status": "done",
+             "network_id": 9001,
              "updated_at": "2026-11-03T10:00:00+00:00",
              "signals": {"temp": 50, "battery": 3, "wifi": 4, "lfr": 1}},
             {"id": 102, "name": "Bureau", "type": "owl", "battery": "low", "status": "offline",
@@ -39,6 +41,7 @@ class ModelsTest {
         val jardin = cameras.first { it.name == "Jardin" }
         assertEquals("Blink Outdoor", jardin.model)
         assertTrue(jardin.outdoor)
+        assertEquals("9001", jardin.networkId)
         assertEquals(10.0, jardin.tempC!!, 0.0001)
         assertEquals(50.0, jardin.tempF!!, 0.0001)
         assertEquals(3, jardin.batteryLevel)
@@ -75,6 +78,35 @@ class ModelsTest {
         val cameras = parseHomescreen(json)
         assertEquals(1, cameras.size)
         assertEquals("catalina", cameras.first().type)
+    }
+
+    @Test
+    fun cheminsDeReveilSelonLeModele() {
+        val jardin = parseCamera(
+            JSONObject(
+                """{"id":101,"name":"Jardin","type":"catalina","network_id":9001}""",
+            ),
+            "cameras",
+        )
+        assertEquals("/network/9001/camera/101/thumbnail", cameraSnapPath(jardin, "42"))
+
+        val mini = parseCamera(
+            JSONObject("""{"id":201,"name":"Mini","type":"owl","network_id":9001}"""),
+            "owls",
+        )
+        assertEquals(
+            "/api/v1/accounts/42/networks/9001/owls/201/thumbnail",
+            cameraSnapPath(mini, "42"),
+        )
+
+        val porte = parseCamera(
+            JSONObject("""{"id":301,"name":"Porte","type":"lotus","network_id":9001}"""),
+            "doorbells",
+        )
+        assertEquals(
+            "/api/v1/accounts/42/networks/9001/doorbells/301/thumbnail",
+            cameraSnapPath(porte, "42"),
+        )
     }
 
     @Test

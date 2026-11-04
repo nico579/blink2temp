@@ -102,11 +102,22 @@ def afficher_historique(storage: Storage, heures: int = 24):
     print("-" * 65)
 
 
-def executer_releve(storage: Storage, outdoor_only: bool = True, camera_cible: str | None = None) -> list[dict]:
+def executer_releve(
+    storage: Storage,
+    outdoor_only: bool = True,
+    camera_cible: str | None = None,
+    reveiller: bool = False,
+    forcer_reveil: bool = False,
+) -> list[dict]:
     """Exécute un relevé complet et le sauvegarde en base."""
+    reveils: list[str] = []
     releves = asyncio.run(collector.relever_une_fois(
-        storage=storage, outdoor_only=outdoor_only, camera_cible=camera_cible, interactive=False
+        storage=storage, outdoor_only=outdoor_only, camera_cible=camera_cible,
+        interactive=False, reveiller=reveiller, forcer_reveil=forcer_reveil,
+        reveils_effectues=reveils,
     ))
+    if reveils:
+        print(f"[i] Caméra(s) réveillée(s) car température inchangée : {', '.join(reveils)}")
     return releves
 
 
@@ -156,6 +167,14 @@ def parse_args() -> argparse.Namespace:
         help="Cible uniquement une caméra spécifique (ex: --camera jardin).",
     )
     parser.add_argument(
+        "--reveiller", action="store_true",
+        help="Réveille les caméras dont la température n'a pas changé (consomme la pile).",
+    )
+    parser.add_argument(
+        "--force-reveil", action="store_true",
+        help="Avec --reveiller, ignore le délai d'une heure entre deux réveils (relevé manuel).",
+    )
+    parser.add_argument(
         "--stats", action="store_true",
         help="Affiche les statistiques (min/max/moyenne) des dernières 24h et quitte.",
     )
@@ -199,6 +218,10 @@ def main() -> int:
         return 0
 
     cadence = args.frequence or args.loop or cfg.get("frequence_minutes", 60)
+    reveiller = args.reveiller or bool(cfg.get("reveiller_cameras", False))
+    if reveiller:
+        print("[i] Réveil activé : seules les caméras dont la température n'a pas changé seront sollicitées "
+              "(pile, jusqu'à 1 minute par caméra, au plus une fois par heure).")
 
     if args.install_task:
         return 0 if autostart.installer_tache_planifiee(cadence) else 1
@@ -237,7 +260,10 @@ def main() -> int:
         cible_desc = f" ({args.camera})" if args.camera else ""
         print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] Relève des caméras extérieures{cible_desc} en cours...")
         try:
-            releves = executer_releve(storage, outdoor_only=args.outdoor_only, camera_cible=args.camera)
+            releves = executer_releve(
+                storage, outdoor_only=args.outdoor_only, camera_cible=args.camera,
+                reveiller=reveiller, forcer_reveil=args.force_reveil,
+            )
             afficher_tableau_releves(releves)
             print(f"[✓] Relevé terminé : {len(releves)} caméra(s) enregistrée(s).")
             return 0
@@ -249,7 +275,10 @@ def main() -> int:
     aligner = not args.no_align
 
     def action_tour():
-        releves = executer_releve(storage, outdoor_only=args.outdoor_only, camera_cible=args.camera)
+        releves = executer_releve(
+            storage, outdoor_only=args.outdoor_only, camera_cible=args.camera,
+            reveiller=reveiller,
+        )
         afficher_tableau_releves(releves)
         print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] {len(releves)} caméra(s) enregistrée(s) en base.")
 

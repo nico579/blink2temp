@@ -1,31 +1,38 @@
-# Blink2Temp 0.1.4
+# Blink2Temp 0.1.5
 
-Caméras sans température masquées et courbe lisible avec zoom.
+Réveil des caméras uniquement lorsque leur température n'a pas évolué, sur Android comme sur ordinateur.
 
 ## Android
 
-- **Seules les caméras qui remontent une température sont affichées.** Les
-  caméras sans sonde (par exemple une Blink Mini sans température) n'apparaissent
-  plus dans la liste, ne sont plus relevées ni enregistrées.
-- **Courbe reprise de l'application PC** : graduations horizontales avec les
-  valeurs de température, graduations verticales avec la date et l'heure,
-  grille discrète et pas adapté à l'amplitude.
-- **Zoom et déplacement** : pincer pour zoomer, glisser pour se déplacer,
-  double-tap ou bouton « Réinitialiser » pour revenir à la vue complète. Le
-  zoom reste actif lors des relevés suivants et se limite à la période choisie
-  (6 h, 24 h ou 7 jours).
-- Le relevé automatique en arrière-plan de la 0.1.3 est conservé.
-- `versionCode` 5 : Android accepte l'installation par-dessus la 0.1.3.
+- **Nouvelle option « Réveiller les caméras si la température n'a pas changé »**,
+  désactivée par défaut.
+- Une commande photo est envoyée **uniquement** aux caméras sélectionnées dont la
+  température passive est identique à la dernière mesure (tolérance 0,05 °C).
+  Une caméra dont la température a bougé, ou qui n'en remonte pas, n'est jamais
+  réveillée.
+- Après le réveil, l'écran d'accueil Blink est relu pour afficher la température
+  fraîche.
+- **Économie de pile** : en arrière-plan, au plus un réveil par heure. Le bouton
+  « Relever maintenant » force le réveil sans attendre ce délai, mais toujours
+  uniquement pour les températures inchangées.
+- Un avertissement rappelle qu'une photo consomme la pile et peut durer jusqu'à
+  une minute par caméra.
+- `versionCode` 6 : Android accepte l'installation par-dessus la 0.1.4.
 
 ## Ordinateur
 
-- Aucun changement fonctionnel ; les exécutables sont reconstruits avec la
-  même version.
+- **Même option dans le tableau de bord web** : case à cocher dans l'en-tête,
+  enregistrée dans `config.json` (`reveiller_cameras`).
+- Le relevé planifié applique le même délai d'une heure ; le bouton
+  « Relever maintenant » force le réveil.
+- Nouvelles options CLI : `--reveiller` et `--force-reveil`.
+- Les caméras qui ne remontent pas de température ne sont plus affichées dans
+  les cartes, comme sur Android.
 
 ## Vérification
 
-- 31 tests unitaires Android, dont le filtrage des caméras sans température,
-  les règles de sélection et l'anti-doublon du relevé automatique.
+- Tests unitaires Android complétés (règle de température inchangée et délai
+  entre réveils), tests Python complétés avec un scénario de réveil sélectif.
 - Tests Python et bundles reconstruits par GitHub Actions.
 - APK et AAB signés avec la même clé que gpx2elev.
 - Chaque fichier publié possède son empreinte SHA-256 dans `SHA256SUMS.txt`.

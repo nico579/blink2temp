@@ -137,6 +137,7 @@ fun BlinkScreen(
     onToggleCamera: (String) -> Unit,
     onSelectAll: () -> Unit,
     onSelectNone: () -> Unit,
+    onToggleWakeCameras: () -> Unit,
     onWindowChange: (Int) -> Unit,
     onLogout: () -> Unit,
     onClearHistory: () -> Unit,
@@ -164,6 +165,7 @@ fun BlinkScreen(
                             onToggleCamera = onToggleCamera,
                             onSelectAll = onSelectAll,
                             onSelectNone = onSelectNone,
+                            onToggleWakeCameras = onToggleWakeCameras,
                             onWindowChange = onWindowChange,
                             onClearHistory = onClearHistory,
                             onUpdates = onUpdates,
@@ -371,6 +373,7 @@ private fun Dashboard(
     onToggleCamera: (String) -> Unit,
     onSelectAll: () -> Unit,
     onSelectNone: () -> Unit,
+    onToggleWakeCameras: () -> Unit,
     onWindowChange: (Int) -> Unit,
     onClearHistory: () -> Unit,
     onUpdates: () -> Unit,
@@ -417,7 +420,7 @@ private fun Dashboard(
         contentPadding = PaddingValues(bottom = 26.dp),
     ) {
         item { SyncBar(state, onRefresh) }
-        item { CameraSelectionCard(state, onToggleCamera, onSelectAll, onSelectNone) }
+        item { CameraSelectionCard(state, onToggleCamera, onSelectAll, onSelectNone, onToggleWakeCameras) }
         item { SectionTitle("Dernières mesures") }
 
         when {
@@ -489,6 +492,7 @@ private fun CameraSelectionCard(
     onToggle: (String) -> Unit,
     onAll: () -> Unit,
     onNone: () -> Unit,
+    onToggleWake: () -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -552,6 +556,34 @@ private fun CameraSelectionCard(
                             )
                         }
                     }
+                }
+            }
+
+            HorizontalDivider(color = Border, modifier = Modifier.padding(vertical = 6.dp))
+            Row(
+                Modifier.fillMaxWidth()
+                    .clickable { onToggleWake() }
+                    .padding(vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = state.wakeCameras,
+                    onCheckedChange = { onToggleWake() },
+                    colors = CheckboxDefaults.colors(checkedColor = Sky, uncheckedColor = Muted),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Réveiller les caméras si la température n'a pas changé",
+                        fontSize = 13.sp,
+                        color = if (state.wakeCameras) TextMain else Muted,
+                        fontWeight = if (state.wakeCameras) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                    Text(
+                        "Prend une photo, consomme la pile et peut durer une minute par caméra. " +
+                            "En arrière-plan : au plus une fois par heure.",
+                        fontSize = 10.sp,
+                        color = Muted,
+                    )
                 }
             }
         }

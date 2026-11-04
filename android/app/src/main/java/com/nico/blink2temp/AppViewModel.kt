@@ -44,6 +44,7 @@ data class UiState(
     val readings: List<Reading> = emptyList(),
     val lastSync: Long? = null,
     val windowHours: Int = 24,
+    val wakeCameras: Boolean = false,
 )
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
@@ -70,6 +71,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 selectionInitialised = selection != null,
                 readings = historique,
                 lastSync = historique.maxOfOrNull { mesure -> mesure.timestamp },
+                wakeCameras = sessionStore.loadWakeCameras(),
             )
         }
         if (session != null) {
@@ -167,7 +169,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(error = "Cochez au moins une caméra avant de lancer un relevé.") }
             return
         }
-        lancer("Relevé des caméras sélectionnées…") { synchroniser() }
+        lancer("Relevé des caméras sélectionnées…") { synchroniser(forcé = true) }
+    }
+
+    /** Active ou désactive le réveil des caméras avant chaque lecture. */
+    fun toggleWakeCameras() {
+        val actif = !_state.value.wakeCameras
+        sessionStore.saveWakeCameras(actif)
+        _state.update { it.copy(wakeCameras = actif) }
     }
 
     fun toggleCamera(name: String) {
@@ -260,9 +269,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * Récupère l'écran d'accueil, ne conserve que les caméras cochées, puis
      * enregistre les mesures dans l'historique local.
      */
-    private suspend fun synchroniser() {
+    private suspend fun synchroniser(forcé: Boolean = false) {
+        val etat = _state.value
         val resultat = withContext(Dispatchers.IO) {
-            ReadingSync.run(getApplication<Application>())
+            ReadingSync.run(
+                context = getApplication<Application>(),
+                wake = etat.wakeCameras,
+                respectWakeCooldown = !forcé,
+            )
         } ?: run {
             if (_state.value.session == null) {
                 throw BlinkAuthException("Connectez-vous à votre compte Blink.")
@@ -270,6 +284,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val avertissement = if (resultat.wakeFailures.isEmpty()) null else {
+            "Réveil impossible pour : ${resultat.wakeFailures.joinToString(", ")}. " +
+                "La température affichée peut être ancienne."
+        }
         _state.update {
             it.copy(
                 session = resultat.session,
@@ -279,6 +297,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 readings = resultat.readings,
                 lastSync = resultat.timestamp,
                 error = null,
+                notice = avertissement,
             )
         }
     }

@@ -11,6 +11,7 @@ Développée en s'appuyant sur l'architecture et les principes de robustesse du 
 1. **Relève horaire automatisée** :
    - Interroge l'API Blink toutes les heures (alignée sur les heures rondes : 10:00, 11:00, 12:00...).
    - **Préservation des piles** : effectue une lecture passive de l'écran d'accueil cloud (`homescreen`), sans réveiller physiquement la caméra (aucun déclenchement intempestif de photo ni consommation superflue de batterie lithium).
+   - **Réveil ciblé optionnel** : si la température passive n'a pas évolué depuis la dernière mesure, une commande photo peut forcer la caméra à renvoyer une valeur fraîche. Désactivé par défaut, au plus une fois par heure en relève planifiée, et jamais pour une caméra sans température ou dont la valeur a changé.
 
 2. **Ciblage spécifique des caméras extérieures (Outdoor)** :
    - Filtre automatiquement les modèles extérieurs (`catalina` pour Blink Outdoor Gen 3, `sedona` pour Blink Outdoor 4, `canary`/`xt2`/`xt`).
@@ -38,6 +39,7 @@ Développée en s'appuyant sur l'architecture et les principes de robustesse du 
    - Cartes visuelles de télémétrie en temps réel par caméra (température, pile, Wi-Fi, statut).
    - Synthèse statistique calculée sur la période affichée (min, max, moyenne).
    - Bouton d'actualisation immédiate (*Relever maintenant*) et d'export CSV pour Excel.
+   - Case **« Réveiller les caméras si la température n'a pas changé »** (pile, avertissement affiché), identique à l'application Android. Les caméras sans température ne sont pas affichées.
 
 5. **Intégration Windows transparente** :
    - Réutilise automatiquement la session authentifiée existante de `blink2video` (`%LOCALAPPDATA%\blink2video\blink_auth.json`). Aucun mot de passe à retaper !

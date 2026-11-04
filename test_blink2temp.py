@@ -277,6 +277,92 @@ class TestCollector(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(releves_tous), 3)
 
 
+class TestReveilCameras(unittest.IsolatedAsyncioTestCase):
+    def test_temperature_inchangee(self):
+        self.assertTrue(collector.temperature_inchangee(12.3, 12.3))
+        self.assertTrue(collector.temperature_inchangee(12.3, 12.32))
+        self.assertFalse(collector.temperature_inchangee(12.3, 12.9))
+        # Première mesure : on établit une référence.
+        self.assertTrue(collector.temperature_inchangee(12.3, None))
+        # Une caméra sans température n'est jamais réveillée.
+        self.assertFalse(collector.temperature_inchangee(None, 12.3))
+        self.assertFalse(collector.temperature_inchangee(None, None))
+
+    def test_delai_entre_reveils(self):
+        maintenant = 10_000_000.0
+        heure = 60 * 60
+        self.assertTrue(collector.reveil_autorise(None, maintenant))
+        self.assertTrue(collector.reveil_autorise(0, maintenant))
+        self.assertFalse(collector.reveil_autorise(maintenant - 30 * 60, maintenant))
+        self.assertTrue(collector.reveil_autorise(maintenant - heure, maintenant))
+
+    async def test_reveil_seulement_des_temperatures_inchangees(self):
+        class FausseCamera:
+            def __init__(self):
+                self.reveillee = False
+
+            async def snap_picture(self):
+                self.reveillee = True
+                return {"id": 1, "network_id": 9001}
+
+        class FauxBlink:
+            def __init__(self, ecrans, cameras):
+                self._ecrans = ecrans
+                self.homescreen = ecrans[0]
+                self.cameras = cameras
+                self.appels = 0
+
+            async def get_homescreen(self):
+                self.homescreen = self._ecrans[min(self.appels, len(self._ecrans) - 1)]
+                self.appels += 1
+
+        jardin = FausseCamera()
+        portail = FausseCamera()
+        avant = {
+            "cameras": [
+                {"name": "Jardin", "id": 101, "type": "catalina", "signals": {"temp": 50}},
+                {"name": "Portail", "id": 102, "type": "catalina", "signals": {"temp": 60}},
+            ]
+        }
+        apres = {
+            "cameras": [
+                {"name": "Jardin", "id": 101, "type": "catalina", "signals": {"temp": 53.6}},
+                {"name": "Portail", "id": 102, "type": "catalina", "signals": {"temp": 60}},
+            ]
+        }
+        blink = FauxBlink([avant, apres], {"Jardin": jardin, "Portail": portail})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Storage(Path(tmp) / "reveil.db")
+            ancien = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
+            store.enregistrer_releves([
+                {
+                    "recorded_at": ancien.isoformat(), "local_time": "2026-11-03 09:00:00",
+                    "camera_name": "Jardin", "is_outdoor": 1, "temp_c": 10.0,
+                },
+                {
+                    "recorded_at": ancien.isoformat(), "local_time": "2026-11-03 09:00:00",
+                    "camera_name": "Portail", "is_outdoor": 1, "temp_c": 12.0,
+                },
+            ])
+
+            reveils: list[str] = []
+            releves = await collector.relever_temperatures(
+                blink, storage=store, reveiller=True, reveils_effectues=reveils
+            )
+
+            # Jardin est resté à 10 °C : il est réveillé. Portail a bougé : non.
+            self.assertTrue(jardin.reveillee)
+            self.assertFalse(portail.reveillee)
+            self.assertEqual(reveils, ["Jardin"])
+            # L'écran d'accueil a été relu après le réveil.
+            self.assertEqual(blink.appels, 2)
+            self.assertEqual(
+                {r["camera_name"]: r["temp_c"] for r in releves},
+                {"Jardin": 12.0, "Portail": 15.6},
+            )
+
+
 class TestSchedulerCalcul(unittest.TestCase):
     def test_calcul_attente_prochaine_heure(self):
         attente = scheduler.calculer_attente_prochaine_heure(aligner_heure=True, intervalle_minutes=60)

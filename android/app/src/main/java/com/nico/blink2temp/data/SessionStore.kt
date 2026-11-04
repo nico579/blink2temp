@@ -68,6 +68,20 @@ class SessionStore(context: Context) {
         prefs.edit().putStringSet(KEY_SELECTION, names).apply()
     }
 
+    /** Option « réveiller les caméras avant lecture », désactivée par défaut. */
+    fun loadWakeCameras(): Boolean = prefs.getBoolean(KEY_WAKE, false)
+
+    fun saveWakeCameras(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_WAKE, enabled).apply()
+    }
+
+    /** Dernier réveil effectué, pour espacer les réveils automatiques. */
+    fun loadLastWake(): Long? = prefs.getLong(KEY_LAST_WAKE, 0L).takeIf { it > 0L }
+
+    fun saveLastWake(timestamp: Long) {
+        prefs.edit().putLong(KEY_LAST_WAKE, timestamp).apply()
+    }
+
     private companion object {
         const val KEY_USERNAME = "username"
         const val KEY_HARDWARE = "hardware_id"
@@ -78,5 +92,7 @@ class SessionStore(context: Context) {
         const val KEY_ACCOUNT = "account_id"
         const val KEY_EMAIL = "email"
         const val KEY_SELECTION = "selection"
+        const val KEY_WAKE = "wake_cameras"
+        const val KEY_LAST_WAKE = "last_wake"
     }
 }

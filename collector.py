@@ -8,12 +8,24 @@ des caméras extérieures et les enregistre en base.
 from __future__ import annotations
 
 import datetime as dt
+import logging
+import time
 from typing import Any
 
 from blinkpy.blinkpy import Blink
 
 import blink_auth
+import config
 from storage import Storage
+
+_LOGGER = logging.getLogger(__name__)
+
+# Deux températures distantes de moins de 0,05 °C sont considérées identiques :
+# c'est le bruit d'arrondi de Blink, pas une évolution réelle.
+TOLERANCE_REVEIL_C = 0.05
+
+# Un réveil automatique consomme la pile : on l'espace d'au moins une heure.
+DELAI_REVEIL_MINUTES = 60
 
 CAMERA_MODELS: dict[str, str] = {
     "catalina": "Blink Outdoor",
@@ -72,22 +84,34 @@ def convertir_fahrenheit_en_celsius(temp_f: float | int | None) -> float | None:
         return None
 
 
-async def relever_temperatures(
-    blink: Blink,
-    storage: Storage | None = None,
-    outdoor_only: bool = True,
-    camera_cible: str | None = None,
-    cameras_ciblees: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Récupère l'état courant et les températures depuis l'écran d'accueil Blink.
+def temperature_inchangee(
+    actuelle: float | None,
+    precedente: float | None,
+    tolerance_c: float = TOLERANCE_REVEIL_C,
+) -> bool:
+    """Vrai si la température passive n'a pas évolué depuis la dernière mesure.
 
-    L'écran d'accueil est une interrogation passive des serveurs Blink :
-    il fournit les données de télémétrie récentes sans solliciter les batteries
-    des caméras physiques.
+    C'est le seul cas où réveiller la caméra apporte une information nouvelle.
+    Sans mesure précédente, on réveille pour établir une référence. Une caméra
+    sans température n'est jamais réveillée.
     """
-    await blink.get_homescreen()
-    home = getattr(blink, "homescreen", None) or {}
+    if actuelle is None:
+        return False
+    if precedente is None:
+        return True
+    try:
+        return abs(float(actuelle) - float(precedente)) <= tolerance_c
+    except (TypeError, ValueError):
+        return True
 
+
+def _extraire_releves(
+    home: dict[str, Any],
+    outdoor_only: bool,
+    camera_cible: str | None,
+    cameras_ciblees: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Transforme l'écran d'accueil Blink en lignes de relevé prêtes pour SQLite."""
     maintenant_utc = dt.datetime.now(dt.timezone.utc)
     maintenant_local = dt.datetime.now()
     recorded_at_str = maintenant_utc.isoformat()
@@ -128,7 +152,7 @@ async def relever_temperatures(
             code_type = str(app.get("type") or "")
             modele = nom_modele(code_type)
 
-            releve = {
+            releves.append({
                 "recorded_at": recorded_at_str,
                 "local_time": local_time_str,
                 "camera_name": nom,
@@ -144,13 +168,93 @@ async def relever_temperatures(
                 "lfr_signal": signals.get("lfr"),
                 "status": str(app.get("status") or ""),
                 "blink_updated_at": app.get("updated_at"),
-            }
-            releves.append(releve)
+            })
+
+    return releves
+
+
+async def reveiller_cameras_immobiles(
+    blink: Blink,
+    releves: list[dict[str, Any]],
+    precedentes: dict[str, float | None],
+) -> list[str]:
+    """Réveille uniquement les caméras dont la température passive n'a pas bougé.
+
+    La commande « photo » force la caméra à renvoyer ses signaux à jour. Elle
+    consomme de la pile et peut prendre jusqu'à une minute par caméra : elle
+    n'est utilisée que si l'utilisateur l'a demandé.
+    """
+    cameras = getattr(blink, "cameras", None)
+    if not hasattr(cameras, "get"):
+        return []
+
+    reveillees: list[str] = []
+    for releve in releves:
+        nom = releve["camera_name"]
+        if not temperature_inchangee(releve.get("temp_c"), precedentes.get(nom)):
+            continue
+        camera = cameras.get(nom)
+        if camera is None:
+            _LOGGER.warning("Réveil ignoré : caméra %s introuvable côté blinkpy", nom)
+            continue
+        try:
+            await camera.snap_picture()
+        except Exception as err:  # noqa: BLE001 - une caméra ne doit pas bloquer les autres
+            _LOGGER.warning("Réveil impossible pour %s : %s", nom, err)
+            continue
+        reveillees.append(nom)
+
+    return reveillees
+
+
+async def relever_temperatures(
+    blink: Blink,
+    storage: Storage | None = None,
+    outdoor_only: bool = True,
+    camera_cible: str | None = None,
+    cameras_ciblees: list[str] | None = None,
+    reveiller: bool = False,
+    reveils_effectues: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Récupère l'état courant et les températures depuis l'écran d'accueil Blink.
+
+    L'écran d'accueil est une interrogation passive des serveurs Blink :
+    il fournit les données de télémétrie récentes sans solliciter les batteries
+    des caméras physiques.
+
+    Si ``reveiller`` est vrai, les caméras dont la température n'a pas évolué
+    depuis la dernière mesure en base reçoivent une commande photo, puis
+    l'écran d'accueil est relu pour récupérer les températures fraîches.
+    """
+    await blink.get_homescreen()
+    home = getattr(blink, "homescreen", None) or {}
+    releves = _extraire_releves(home, outdoor_only, camera_cible, cameras_ciblees)
+
+    if reveiller and storage is not None and releves:
+        precedentes = {
+            str(row["camera_name"]): row.get("temp_c")
+            for row in storage.obtenir_dernieres_temperatures(outdoor_only=outdoor_only)
+        }
+        reveillees = await reveiller_cameras_immobiles(blink, releves, precedentes)
+        if reveillees:
+            await blink.get_homescreen()
+            home = getattr(blink, "homescreen", None) or {}
+            releves = _extraire_releves(home, outdoor_only, camera_cible, cameras_ciblees)
+            if reveils_effectues is not None:
+                reveils_effectues.extend(reveillees)
 
     if storage is not None and releves:
         storage.enregistrer_releves(releves)
 
     return releves
+
+
+def reveil_autorise(dernier_reveil: float | int | None, maintenant: float | None = None) -> bool:
+    """Respecte le délai minimal entre deux réveils automatiques."""
+    if not dernier_reveil:
+        return True
+    instant = time.time() if maintenant is None else maintenant
+    return instant - float(dernier_reveil) >= DELAI_REVEIL_MINUTES * 60
 
 
 async def relever_une_fois(
@@ -159,14 +263,33 @@ async def relever_une_fois(
     camera_cible: str | None = None,
     cameras_ciblees: list[str] | None = None,
     interactive: bool = True,
+    reveiller: bool = False,
+    forcer_reveil: bool = False,
+    reveils_effectues: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Exécute un relevé complet ponctuel en ouvrant une session temporaire."""
+    """Exécute un relevé complet ponctuel en ouvrant une session temporaire.
+
+    ``forcer_reveil`` ignore le délai d'une heure : utilisé par le bouton
+    manuel « Relever maintenant », pas par la relève planifiée.
+    """
     store = storage or Storage()
+    rever = reveiller
+    if rever and not forcer_reveil:
+        cfg = config.charger_config()
+        rever = reveil_autorise(cfg.get("dernier_reveil"))
+
+    reveils: list[str] = []
     async with blink_auth.session_http_temporaire() as session:
         blink = await blink_auth.connect(session, interactive=interactive)
         if not blink:
             raise ConnectionError("Impossible de se connecter au compte Blink.")
-        return await relever_temperatures(
+        releves = await relever_temperatures(
             blink, store, outdoor_only=outdoor_only, camera_cible=camera_cible,
-            cameras_ciblees=cameras_ciblees
+            cameras_ciblees=cameras_ciblees, reveiller=rever,
+            reveils_effectues=reveils,
         )
+    if reveils_effectues is not None:
+        reveils_effectues.extend(reveils)
+    if reveils:
+        config.modifier_config(dernier_reveil=time.time())
+    return releves

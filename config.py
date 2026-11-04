@@ -21,6 +21,8 @@ DEFAUTS: dict[str, Any] = {
     "port_web": 8770,
     "outdoor_only": True,
     "visibilite_cameras": {},
+    "reveiller_cameras": False,
+    "dernier_reveil": 0,
 }
 
 

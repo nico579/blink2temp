@@ -82,6 +82,36 @@ HTML_PAGE = """<!DOCTYPE html>
             gap: 12px;
             flex-wrap: wrap;
         }
+        .wake-setting {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            margin: -10px 0 22px;
+            padding: 10px 14px;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+        }
+        .wake-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+        }
+        .wake-toggle input[type="checkbox"] {
+            width: 17px;
+            height: 17px;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+        .wake-hint {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
         button, .btn {
             background-color: var(--primary);
             color: #0f172a;
@@ -507,6 +537,18 @@ HTML_PAGE = """<!DOCTYPE html>
             </div>
         </header>
 
+        <!-- Option de réveil des caméras (consomme la pile) -->
+        <div class="wake-setting">
+            <label class="wake-toggle" title="Une commande photo force la caméra à renvoyer sa température à jour.">
+                <input type="checkbox" id="input-reveil-cameras" onchange="basculerReveilCameras(this.checked)">
+                <span>🔋 Réveiller les caméras si la température n'a pas changé</span>
+            </label>
+            <span class="wake-hint">
+                Une photo consomme la pile et peut durer une minute par caméra.
+                En relève planifiée : au plus une fois par heure. Une relève manuelle force le réveil.
+            </span>
+        </div>
+
         <!-- Cartes en direct par caméra -->
         <div id="cards-container" class="grid-cards">
             <!-- Rempli par JavaScript -->
@@ -640,6 +682,42 @@ HTML_PAGE = """<!DOCTYPE html>
         let cameraCouleurs = {};
         // Préférence de visibilité persistée côté serveur (config.json)
         let cameraVisibiliteServeur = {};
+        // Option de réveil des caméras persistée côté serveur (config.json)
+        let reveilCameras = false;
+
+        async function chargerReglages() {
+            try {
+                const res = await fetch("/api/reglages");
+                const r = await res.json();
+                reveilCameras = Boolean(r.reveiller_cameras);
+                const input = document.getElementById("input-reveil-cameras");
+                if (input) input.checked = reveilCameras;
+            } catch (err) {
+                console.error("Erreur de chargement des réglages:", err);
+            }
+        }
+
+        async function basculerReveilCameras(actif) {
+            const precedent = reveilCameras;
+            reveilCameras = Boolean(actif);
+            try {
+                const res = await fetch("/api/reglages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ reveiller_cameras: reveilCameras })
+                });
+                const r = await res.json();
+                if (!r.ok) throw new Error(r.error || "Enregistrement refusé");
+                afficherToast(reveilCameras
+                    ? "🔋 Réveil activé : les caméras seront sollicitées si leur température ne change pas."
+                    : "🔋 Réveil désactivé.");
+            } catch (err) {
+                reveilCameras = precedent;
+                const input = document.getElementById("input-reveil-cameras");
+                if (input) input.checked = precedent;
+                afficherToast("⚠️ Impossible d'enregistrer l'option : " + err);
+            }
+        }
 
         // Fenêtre temporelle d'affichage (en millisecondes)
         let tempsMinVue = 0;
@@ -701,8 +779,13 @@ HTML_PAGE = """<!DOCTYPE html>
 
         function afficherCartes(cameras) {
             const container = document.getElementById("cards-container");
-            if (!cameras || cameras.length === 0) {
-                container.innerHTML = "<p style='color:var(--text-muted);'>Aucune caméra extérieure enregistrée.</p>";
+            // Seules les caméras qui remontent une température sont affichées,
+            // comme sur Android.
+            cameras = (cameras || []).filter(
+                (c) => c.temp_c !== null && c.temp_c !== undefined
+            );
+            if (cameras.length === 0) {
+                container.innerHTML = "<p style='color:var(--text-muted);'>Aucune caméra ne remonte de température pour le moment.</p>";
                 return;
             }
             container.innerHTML = cameras.map((c) => {
@@ -1515,7 +1598,10 @@ HTML_PAGE = """<!DOCTYPE html>
                 });
                 const r = await res.json();
                 if (r.ok) {
-                    afficherToast(`✅ Relevé réussi : ${r.count} caméra(s) actualisée(s).`);
+                    const reveils = r.reveils && r.reveils.length
+                        ? ` ${r.reveils.length} caméra(s) réveillée(s) : ${r.reveils.join(", ")}.`
+                        : "";
+                    afficherToast(`✅ Relevé réussi : ${r.count} caméra(s) actualisée(s).${reveils}`);
                     await chargerDonneesInitiales();
                 } else {
                     afficherToast("⚠️ Erreur : " + (r.error || "Inconnue"));
@@ -1531,6 +1617,7 @@ HTML_PAGE = """<!DOCTYPE html>
         window.addEventListener("resize", redimensionnerCanvas);
         window.addEventListener("DOMContentLoaded", () => {
             redimensionnerCanvas();
+            chargerReglages();
             chargerDonneesInitiales();
             setInterval(chargerDonneesInitiales, 60000);
         });
@@ -1578,6 +1665,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._repondre_json(data)
             return
 
+        if chemin == "/api/reglages":
+            cfg = config.charger_config()
+            self._repondre_json({
+                "reveiller_cameras": bool(cfg.get("reveiller_cameras", False)),
+                "dernier_reveil": cfg.get("dernier_reveil", 0),
+            })
+            return
+
         if chemin == "/api/stats":
             heures = int(query.get("hours", ["24"])[0])
             data = self.storage.obtenir_statistiques(heures=heures, outdoor_only=True)
@@ -1601,6 +1696,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/reglages":
+            try:
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                brut = self.rfile.read(length) if length else b"{}"
+                data = json.loads(brut.decode("utf-8"))
+            except (ValueError, json.JSONDecodeError) as err:
+                self._repondre_json({"ok": False, "error": f"JSON invalide : {err}"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not isinstance(data, dict):
+                self._repondre_json({"ok": False, "error": "Objet JSON attendu."}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            if "reveiller_cameras" in data:
+                valeur = data["reveiller_cameras"]
+                if not isinstance(valeur, bool):
+                    self._repondre_json(
+                        {"ok": False, "error": "reveiller_cameras doit être un booléen."},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                config.modifier_config(reveiller_cameras=valeur)
+
+            cfg = config.charger_config()
+            self._repondre_json({
+                "ok": True,
+                "reveiller_cameras": bool(cfg.get("reveiller_cameras", False)),
+            })
+            return
+
         if parsed.path == "/api/visibilite":
             try:
                 length = int(self.headers.get("Content-Length", 0) or 0)
@@ -1629,13 +1753,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 cameras_json = None  # corps invalide -> relevé sans filtre (comportement historique)
 
             try:
+                cfg = config.charger_config()
+                reveils: list[str] = []
                 # Exécution synchrone protégée par verrou
                 with self.lock:
                     releves = asyncio.run(collector.relever_une_fois(
                         storage=self.storage, outdoor_only=True, interactive=False,
-                        cameras_ciblees=cameras_json
+                        cameras_ciblees=cameras_json,
+                        reveiller=bool(cfg.get("reveiller_cameras", False)),
+                        forcer_reveil=True,
+                        reveils_effectues=reveils,
                     ))
-                self._repondre_json({"ok": True, "count": len(releves)})
+                self._repondre_json({"ok": True, "count": len(releves), "reveils": reveils})
             except Exception as err:
                 self._repondre_json({"ok": False, "error": str(err)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return

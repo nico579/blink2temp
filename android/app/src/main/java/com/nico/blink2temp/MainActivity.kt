@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                 onToggleCamera = model::toggleCamera,
                 onSelectAll = model::selectAll,
                 onSelectNone = model::selectNone,
+                onToggleWakeCameras = model::toggleWakeCameras,
                 onWindowChange = model::changeWindow,
                 onLogout = model::logout,
                 onClearHistory = model::clearHistory,

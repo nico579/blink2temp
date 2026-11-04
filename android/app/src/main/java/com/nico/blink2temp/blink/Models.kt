@@ -18,6 +18,7 @@ data class BlinkSession(
 /** Caméra telle que renvoyée par l'écran d'accueil Blink. */
 data class CameraInfo(
     val id: String,
+    val networkId: String,
     val name: String,
     val type: String,
     val model: String,
@@ -71,6 +72,9 @@ fun parseCamera(objet: JSONObject, groupe: String = "cameras"): CameraInfo {
         }
         .firstOrNull()
         .orEmpty()
+    val reseau = objet.opt("network_id")?.toString()
+        ?.takeIf { it.isNotBlank() && it != "null" }
+        .orEmpty()
 
     val signaux = objet.optJSONObject("signals")
     val tempF = (signaux?.opt("temp") as? Number)?.toDouble()
@@ -78,6 +82,7 @@ fun parseCamera(objet: JSONObject, groupe: String = "cameras"): CameraInfo {
 
     return CameraInfo(
         id = identifiant,
+        networkId = reseau,
         name = nom,
         type = type,
         model = modele,
@@ -98,6 +103,22 @@ private fun JSONObject.optIntOrNull(cle: String): Int? = when (val valeur = opt(
     is Number -> valeur.toInt()
     is String -> valeur.toIntOrNull()
     else -> null
+}
+
+/**
+ * Chemin Blink de la commande « photo » qui réveille une caméra.
+ *
+ * C'est la même commande que le bouton « Réveiller » de blink2video : elle
+ * force la caméra à se réveiller et à renvoyer ses signaux à jour, dont la
+ * température. Les Minis et sonnettes passent par leur propre chemin.
+ */
+fun cameraSnapPath(camera: CameraInfo, accountId: String): String {
+    val reseau = camera.networkId.trim()
+    return when (camera.type) {
+        "owl" -> "/api/v1/accounts/$accountId/networks/$reseau/owls/${camera.id}/thumbnail"
+        "lotus" -> "/api/v1/accounts/$accountId/networks/$reseau/doorbells/${camera.id}/thumbnail"
+        else -> "/network/$reseau/camera/${camera.id}/thumbnail"
+    }
 }
 
 /**

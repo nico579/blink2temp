@@ -54,6 +54,16 @@ class HttpTransport(
         return execute("POST", url, corps, entetes, followRedirects)
     }
 
+    /** POST sans corps (ou avec un corps déjà encodé), utilisé par les commandes Blink. */
+    fun post(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        body: String? = null,
+    ): HttpResponse {
+        val corps = body?.toByteArray(StandardCharsets.UTF_8)
+        return execute("POST", url, corps, headers, true)
+    }
+
     fun clearCookies() {
         cookies.clear()
     }

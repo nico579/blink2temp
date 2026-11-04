@@ -176,14 +176,7 @@ class BlinkClient(
      */
     fun fetchCameras(session: BlinkSession): List<CameraInfo> {
         val url = "https://${normalizeBlinkHost(session.host)}/api/v3/accounts/${session.accountId}/homescreen"
-        val reponse = transport.get(
-            url,
-            headers = mapOf(
-                "Authorization" to "Bearer ${session.accessToken}",
-                "Content-Type" to "application/json",
-                "User-Agent" to API_USER_AGENT,
-            ),
-        )
+        val reponse = transport.get(url, headers = apiHeaders(session))
         when (reponse.status) {
             200 -> Unit
             401, 403 -> throw BlinkAuthException("Session Blink expirée : reconnectez-vous.")
@@ -195,6 +188,75 @@ class BlinkClient(
             throw BlinkException("Réponse Blink illisible.", erreur)
         }
     }
+
+    /**
+     * Réveille physiquement la caméra en lui demandant une photo, puis attend
+     * la confirmation de Blink. C'est la commande du bouton « Réveiller » de
+     * blink2video : elle force la caméra à renvoyer une température fraîche.
+     *
+     * Consomme de la pile et peut prendre jusqu'à une minute : à n'utiliser
+     * que si l'utilisateur l'a demandé.
+     */
+    fun wakeCamera(
+        session: BlinkSession,
+        camera: CameraInfo,
+        timeoutMs: Long = 60_000L,
+        pauseMs: Long = 2_000L,
+    ): Boolean {
+        if (camera.id.isBlank() || camera.networkId.isBlank()) return false
+        val base = "https://${normalizeBlinkHost(session.host)}"
+        val reponse = transport.post(
+            base + cameraSnapPath(camera, session.accountId),
+            headers = apiHeaders(session),
+        )
+        when (reponse.status) {
+            200, 201, 202 -> Unit
+            401, 403 -> throw BlinkAuthException("Session Blink expirée : reconnectez-vous.")
+            else -> throw BlinkException("Réveil refusé par Blink (code ${reponse.status}).")
+        }
+
+        val json = reponse.json()
+            ?: throw BlinkException("Réponse de réveil Blink illisible.")
+        val commande = json.opt("id")?.toString()
+            ?.takeIf { it.isNotBlank() && it != "null" }
+            ?: throw BlinkException("Blink n'a pas renvoyé de commande de réveil.")
+        val reseau = json.opt("network_id")?.toString()
+            ?.takeIf { it.isNotBlank() && it != "null" }
+            ?: camera.networkId
+
+        val fin = System.currentTimeMillis() + timeoutMs.coerceAtLeast(5_000L)
+        while (System.currentTimeMillis() < fin) {
+            val statut = transport.get(
+                "$base/network/$reseau/command/$commande",
+                headers = apiHeaders(session),
+            )
+            if (statut.status == 401 || statut.status == 403) {
+                throw BlinkAuthException("Session Blink expirée : reconnectez-vous.")
+            }
+            if (statut.status == 200) {
+                val etat = statut.json()
+                if (
+                    etat?.optInt("status_code", 0) == 908 &&
+                    etat.optBoolean("complete", false)
+                ) {
+                    return true
+                }
+            }
+            try {
+                Thread.sleep(pauseMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        return false
+    }
+
+    private fun apiHeaders(session: BlinkSession): Map<String, String> = mapOf(
+        "Authorization" to "Bearer ${session.accessToken}",
+        "Content-Type" to "application/json",
+        "User-Agent" to API_USER_AGENT,
+    )
 
     private fun terminerConnexion(enAttente: PendingLogin): LoginOutcome {
         val autorisation = transport.get(
