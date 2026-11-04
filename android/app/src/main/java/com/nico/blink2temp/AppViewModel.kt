@@ -13,7 +13,8 @@ import com.nico.blink2temp.core.TemperatureUnit
 import com.nico.blink2temp.data.MeasurementStore
 import com.nico.blink2temp.data.Reading
 import com.nico.blink2temp.data.SessionStore
-import com.nico.blink2temp.data.toReading
+import com.nico.blink2temp.sync.ReadingScheduler
+import com.nico.blink2temp.sync.ReadingSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +54,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(
         UiState(
             unit = Temperature.unitFor(Locale.getDefault()),
-            readings = measurementStore.load(),
         ),
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -61,16 +61,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     init {
         val session = sessionStore.loadSession()
         val selection = sessionStore.loadSelection()
+        val historique = measurementStore.load()
         _state.update {
             it.copy(
                 session = session,
                 email = sessionStore.loadEmail(),
                 selected = selection.orEmpty(),
                 selectionInitialised = selection != null,
+                readings = historique,
+                lastSync = historique.maxOfOrNull { mesure -> mesure.timestamp },
             )
         }
         if (session != null) {
+            ReadingScheduler.schedule(getApplication<Application>())
             lancer("Connexion à Blink…") { synchroniser() }
+        } else {
+            ReadingScheduler.cancel(getApplication<Application>())
         }
     }
 
@@ -93,6 +99,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }) {
                 is LoginOutcome.Success -> {
                     sessionStore.saveSession(resultat.session)
+                    ReadingScheduler.schedule(getApplication<Application>())
                     _state.update {
                         it.copy(
                             session = resultat.session,
@@ -126,6 +133,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }) {
                 is LoginOutcome.Success -> {
                     sessionStore.saveSession(resultat.session)
+                    ReadingScheduler.schedule(getApplication<Application>())
                     _state.update {
                         it.copy(
                             session = resultat.session,
@@ -184,8 +192,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(windowHours = hours) }
     }
 
+    /** Recharge l'historique écrit par le relevé automatique en arrière-plan. */
+    fun reloadHistory() {
+        val readings = measurementStore.load()
+        _state.update { etat ->
+            val dernier = listOfNotNull(
+                etat.lastSync,
+                readings.maxOfOrNull { mesure -> mesure.timestamp },
+            ).maxOrNull()
+            etat.copy(readings = readings, lastSync = dernier)
+        }
+    }
+
     fun logout() {
         client.cancelPendingLogin()
+        ReadingScheduler.cancel(getApplication<Application>())
         sessionStore.clearSession()
         _state.update {
             it.copy(
@@ -240,42 +261,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * enregistre les mesures dans l'historique local.
      */
     private suspend fun synchroniser() {
-        val sessionBrute = _state.value.session
-            ?: throw BlinkAuthException("Connectez-vous à votre compte Blink.")
-        val session = rafraichirSiNecessaire(sessionBrute)
-        val cameras = withContext(Dispatchers.IO) { client.fetchCameras(session) }
+        val resultat = withContext(Dispatchers.IO) {
+            ReadingSync.run(getApplication<Application>())
+        } ?: run {
+            if (_state.value.session == null) {
+                throw BlinkAuthException("Connectez-vous à votre compte Blink.")
+            }
+            return
+        }
 
-        val noms = cameras.map { it.name }.toSet()
-        val etat = _state.value
-        // Premier lancement : toutes les caméras découvertes sont sélectionnées.
-        val selection = if (etat.selectionInitialised) etat.selected.intersect(noms) else noms
-
-        val maintenant = System.currentTimeMillis()
-        val nouvelles = cameras
-            .filter { it.name in selection }
-            .map { it.toReading(maintenant) }
-        val historique = withContext(Dispatchers.IO) { measurementStore.addAll(nouvelles) }
-
-        sessionStore.saveSelection(selection)
         _state.update {
             it.copy(
-                session = session,
-                cameras = cameras,
-                selected = selection,
+                session = resultat.session,
+                cameras = resultat.cameras,
+                selected = resultat.selection,
                 selectionInitialised = true,
-                readings = historique,
-                lastSync = maintenant,
+                readings = resultat.readings,
+                lastSync = resultat.timestamp,
                 error = null,
             )
         }
-    }
-
-    private suspend fun rafraichirSiNecessaire(session: BlinkSession): BlinkSession {
-        if (session.expiresAt - 120_000L > System.currentTimeMillis()) return session
-        val neuve = withContext(Dispatchers.IO) { client.refreshSession(session) }
-        sessionStore.saveSession(neuve)
-        _state.update { it.copy(session = neuve) }
-        return neuve
     }
 
     private fun messageLisible(erreur: Exception): String = when (erreur) {

@@ -35,6 +35,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Le worker d'arrière-plan a pu ajouter des mesures pendant que
+        // l'application était en veille.
+        model.reloadHistory()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {

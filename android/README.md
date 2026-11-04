@@ -4,7 +4,7 @@ Application Android native de relevé des températures Blink, construite avec
 Kotlin et Jetpack Compose (même pile que le projet `gpx2elev` : Gradle 8.7,
 AGP 8.5.2, Kotlin 1.9.24, compileSdk 34, minSdk 26).
 
-Version : **0.1.2** (`VERSION`), `versionCode` 3.
+Version : **0.1.3** (`VERSION`), `versionCode` 4.
 
 ## Fonctionnalités
 
@@ -19,6 +19,9 @@ Version : **0.1.2** (`VERSION`), `versionCode` 3.
   « Tout / Rien » permet de la modifier rapidement.
 - **Relevé passif** : lecture de `GET /api/v3/accounts/{id}/homescreen`, sans
   réveiller les caméras (aucune consommation de pile supplémentaire).
+- **Relevé automatique en arrière-plan** : WorkManager relève les caméras
+  sélectionnées environ toutes les 15 minutes, avec contrainte réseau, même
+  application fermée. La session et la sélection enregistrées sont réutilisées.
 - **Historique local** : fichier JSON privé (`historique.json`), purge à
   30 jours et plafond de 5 000 mesures.
 - **Cartes caméra** : température, modèle, intérieur/extérieur, statut en
@@ -122,7 +125,7 @@ Créer une version :
 
 ```powershell
 # Mettre VERSION et versionCode à jour, puis :
-git tag v0.1.2
+git tag v0.1.3
 git push origin main --tags
 ```
 

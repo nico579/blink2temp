@@ -16,7 +16,15 @@ class MeasurementStore(
     private val retentionDays: Int = 30,
     private val maxEntries: Int = 5000,
 ) {
-    private val lock = Any()
+    private companion object {
+        /**
+         * Verrou commun à toutes les instances : l'interface et le worker
+         * d'arrière-plan écrivent le même fichier d'historique.
+         */
+        val FICHIER_VERROU = Any()
+    }
+
+    private val lock = FICHIER_VERROU
 
     fun load(): List<Reading> = synchronized(lock) { readFile() }
 

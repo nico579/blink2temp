@@ -447,6 +447,12 @@ private fun SyncBar(state: UiState, onRefresh: () -> Unit) {
                     fontSize = 11.sp,
                     color = Muted,
                 )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Relevé automatique en arrière-plan : environ toutes les 15 min.",
+                    fontSize = 11.sp,
+                    color = Muted,
+                )
             }
             Spacer(Modifier.width(8.dp))
             Button(
