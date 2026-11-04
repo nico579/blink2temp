@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -229,6 +230,7 @@ private fun LoginPanel(
 ) {
     var email by rememberSaveable { mutableStateOf(state.email) }
     var password by rememberSaveable { mutableStateOf("") }
+    var motDePasseVisible by rememberSaveable { mutableStateOf(false) }
     var remember by rememberSaveable { mutableStateOf(state.email.isNotBlank()) }
 
     Column(
@@ -265,8 +267,23 @@ private fun LoginPanel(
                     onValueChange = { password = it },
                     label = { Text("Mot de passe") },
                     leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                    trailingIcon = {
+                        TextButton(
+                            onClick = { motDePasseVisible = !motDePasseVisible },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text(
+                                if (motDePasseVisible) "Masquer" else "Afficher",
+                                fontSize = 10.sp,
+                            )
+                        }
+                    },
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (motDePasseVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                 )

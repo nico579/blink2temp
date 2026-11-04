@@ -1,31 +1,31 @@
-# Blink2Temp 0.1.0
+# Blink2Temp 0.1.1
 
-Première version Android et premiers exécutables autonomes pour ordinateur.
+Version corrective pour la connexion à Blink et la saisie du mot de passe.
 
 ## Android
 
-- Connexion Blink native OAuth 2 + PKCE, vérification 2FA ; le mot de passe
-  n'est jamais enregistré.
-- Sélection des caméras à traiter : seules les caméras cochées sont relevées,
-  enregistrées et affichées.
-- Relevé passif de l'écran d'accueil Blink, sans réveiller les caméras.
-- Historique local (30 jours, 5 000 mesures), statistiques min / moyenne / max
-  et courbe sur 6 h, 24 h ou 7 jours.
-- **Mises à jour intégrées** : l'application vérifie les releases GitHub,
-  télécharge l'APK, contrôle son empreinte SHA-256, son identifiant, son
-  numéro de version et sa signature avant de lancer l'installateur Android.
+- **Connexion Blink corrigée** : les redirections OAuth sont désormais suivies
+  manuellement afin de conserver les cookies `blink-session`,
+  `blink-public-session` et `csrf-protection` émis par les réponses 302
+  intermédiaires. Sans ces cookies, Blink répondait
+  `401 session_expired` même avec des identifiants corrects.
+- Un POST redirigé en 301, 302 ou 303 est rejoué en GET, et le nombre de
+  redirections est limité.
+- Le message d'erreur distingue une session expirée d'identifiants incorrects.
+- **Mot de passe affichable** : un bouton « Afficher » / « Masquer » permet de
+  vérifier la saisie avant de se connecter.
+- `versionCode` 2 : Android accepte l'installation par-dessus la version 0.1.0
+  et la mise à jour intégrée peut s'appliquer.
 
 ## Ordinateur
 
-- Exécutables autonomes Windows x64, Linux x64, macOS Intel et macOS Apple
-  Silicon : Python, blinkpy et les dépendances sont inclus.
-- Tableau de bord web local, relevé horaire, historique SQLite et export CSV.
-- Données conservées dans le dossier utilisateur (config.json,
-  temperatures.db, journaux).
+- Aucun changement fonctionnel ; les exécutables sont reconstruits avec la
+  même version.
 
 ## Vérification
 
-- Tests unitaires Android et Python exécutés par GitHub Actions.
+- 26 tests unitaires Android, dont deux tests de transport HTTP couvrant la
+  conservation des cookies et la redirection POST → GET.
+- Tests Python et bundles reconstruits par GitHub Actions.
 - APK et AAB signés avec la même clé que gpx2elev.
-- Chaque fichier publié possède son empreinte SHA-256 dans
-  `SHA256SUMS.txt`.
+- Chaque fichier publié possède son empreinte SHA-256 dans `SHA256SUMS.txt`.

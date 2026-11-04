@@ -102,7 +102,16 @@ class BlinkClient(
                 }
             }
 
-            reponse.status == 401 -> LoginOutcome.Failure("Email ou mot de passe incorrect.")
+            reponse.status == 401 -> {
+                val cause = reponse.json()?.optString("error_cause").orEmpty()
+                LoginOutcome.Failure(
+                    if (cause == "session_expired") {
+                        "La session de connexion Blink a expiré. Réessayez."
+                    } else {
+                        "Email ou mot de passe incorrect."
+                    },
+                )
+            }
             reponse.status == 403 -> LoginOutcome.Failure(
                 "Connexion bloquée par Blink. Validez une connexion dans l'application Blink, puis réessayez.",
             )
