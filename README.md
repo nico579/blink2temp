@@ -31,8 +31,7 @@ Développée en s'appuyant sur l'architecture et les principes de robustesse du 
        - **Shift + Molette** (ou molette horizontale) : Fait défiler directement l'axe des dates de gauche à droite.
        - **Frise chronologique inférieure (minimap)** : Cliquez ou glissez directement sur le bandeau temporel en bas du graphique pour naviguer instantanément à n'importe quelle date.
        - **Boutons de navigation transversale** : Boutons `◀ Reculer` et `Avancer ▶` pour décaler le temps d'un quart de vue par clic.
-     - 🎯 **Double-clic ou bouton** : Réinitialise instantanément la vue à la période sélectionnée.
-     - 🔍 **Sélecteur de dates** : choisissez librement une date de début et de fin (champs vidés = tout l'historique).
+     - 🎯 **Double-clic ou bouton** : Réinitialise instantanément la vue à tout l'historique.
      - 📌 **Survol & HUD Tooltip** : Ligne guide verticale et infobulle affichant l'horodatage exact et la température de chaque caméra.
      - 👁️ **Légende filtrable** : Cliquez sur le nom d'une caméra pour masquer ou afficher sa courbe.
      - ⚡ **100% autonome** : Rendu Canvas fluide 60fps sans aucune dépendance externe ou CDN (fonctionne hors-ligne).

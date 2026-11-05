@@ -453,30 +453,6 @@ HTML_PAGE = """<!DOCTYPE html>
             border-radius: 3px;
         }
 
-        /* Sélecteur de date manuel */
-        .date-picker-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: #0f172a;
-            padding: 4px 10px;
-            border-radius: 8px;
-            border: 1px solid var(--card-border);
-            font-size: 0.82rem;
-        }
-        .date-picker-group input[type="date"] {
-            background: transparent;
-            border: none;
-            color: var(--text-main);
-            font-size: 0.82rem;
-            outline: none;
-            font-family: inherit;
-        }
-        .date-picker-group input[type="date"]::-webkit-calendar-picker-indicator {
-            filter: invert(1);
-            cursor: pointer;
-        }
-
         table {
             width: 100%;
             border-collapse: collapse;
@@ -556,12 +532,6 @@ HTML_PAGE = """<!DOCTYPE html>
                     📈 Courbes des Températures
                 </div>
                 <div class="toolbar-group">
-                    <div class="date-picker-group">
-                        <span>Du</span>
-                        <input type="date" id="input-date-debut" onchange="appliquerPlageDate()">
-                        <span>Au</span>
-                        <input type="date" id="input-date-fin" onchange="appliquerPlageDate()">
-                    </div>
                     <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.82rem;" onclick="reinitialiserZoom()">
                         ↺ Réinitialiser vue
                     </button>
@@ -713,10 +683,8 @@ HTML_PAGE = """<!DOCTYPE html>
         let tempsMinTotal = 0;
         let tempsMaxTotal = 0;
 
-        // Plage de données demandée au serveur ("all" = tout l'historique).
-        // Elle est réutilisée lors des rafraîchissements automatiques pour ne pas
-        // écraser un filtre de dates ni le zoom en cours.
-        let plageCourante = { heures: "all", debut: null, fin: null };
+        // Tout l'historique est toujours chargé. Les rafraîchissements
+        // automatiques conservent uniquement le zoom en cours.
         let vueInitialisee = false;
 
         // Interaction souris sur le graphique principal
@@ -918,13 +886,8 @@ HTML_PAGE = """<!DOCTYPE html>
                 afficherCartes(cartes);
 
                 // À l'ouverture : tout l'historique, avec la courbe entière visible.
-                // Ensuite : on conserve le zoom et le filtre de dates en cours.
-                await chargerHistorique(
-                    plageCourante.heures,
-                    plageCourante.debut,
-                    plageCourante.fin,
-                    !vueInitialisee
-                );
+                // Ensuite : on conserve seulement le zoom en cours.
+                await chargerHistorique(!vueInitialisee);
             } catch (err) {
                 console.error("Erreur de chargement initial:", err);
             }
@@ -980,18 +943,9 @@ HTML_PAGE = """<!DOCTYPE html>
             }).join("");
         }
 
-        async function chargerHistorique(heures, debut = null, fin = null, ajusterVue = true) {
-            plageCourante = { heures, debut, fin };
-
-            let url = "/api/history?";
-            if (debut && fin) {
-                url += `start=${encodeURIComponent(debut)}&end=${encodeURIComponent(fin)}`;
-            } else {
-                url += `hours=${heures}`;
-            }
-
+        async function chargerHistorique(ajusterVue = true) {
             try {
-                const res = await fetch(url);
+                const res = await fetch("/api/history?hours=all");
                 donneesBrutes = await res.json();
                 traiterDonnees();
                 if (ajusterVue) {
@@ -1689,19 +1643,6 @@ HTML_PAGE = """<!DOCTYPE html>
 
             tooltip.style.left = posX + "px";
             tooltip.style.top = posY + "px";
-        }
-
-        function appliquerPlageDate() {
-            const d1 = document.getElementById("input-date-debut").value;
-            const d2 = document.getElementById("input-date-fin").value;
-            if (d1 && d2) {
-                const dateDebutIso = new Date(d1 + "T00:00:00").toISOString();
-                const dateFinIso = new Date(d2 + "T23:59:59").toISOString();
-                chargerHistorique(null, dateDebutIso, dateFinIso);
-            } else if (!d1 && !d2) {
-                // Champs vidés : retour à tout l'historique.
-                chargerHistorique("all");
-            }
         }
 
         function mettreAJourStats() {
