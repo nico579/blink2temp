@@ -24,6 +24,8 @@ Utilisation
   Tableau de bord web :
     {binary} --web --loop 60
     puis ouvrir http://localhost:8770
+    Le bouton « Vérifier la mise à jour » y installe la dernière release
+    GitHub (archive vérifiée par empreinte SHA-256, redémarrage automatique).
 
   Relevé unique :
     {binary} --once

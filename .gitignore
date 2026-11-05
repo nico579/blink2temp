@@ -17,6 +17,9 @@ temperatures.db
 *.db-shm
 export_*.csv
 .env
+maj.json
+maj.log
+maj/
 
 # Android
 android/.gradle/

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import collector
 import scheduler
 from storage import Storage
+import updater
 import web
 
 
@@ -413,6 +414,69 @@ class TestWebDashboard(unittest.TestCase):
             self.assertEqual(resp.status, 200)
             data = json.loads(resp.read().decode("utf-8"))
             self.assertEqual(data, [])
+
+
+class TestMiseAJour(unittest.TestCase):
+    def test_comparaison_versions(self):
+        self.assertGreater(updater.numeros("1.6.10"), updater.numeros("1.6.9"))
+        self.assertEqual(updater.numeros("v0.1.5"), (0, 1, 5))
+        self.assertEqual(updater.numeros("invalide"), (0,))
+
+    def test_version_locale_lue_depuis_version(self):
+        attendue = (Path(__file__).parent / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(updater.version_locale(), attendue)
+
+    def test_choix_archive_windows(self):
+        version = "9.8.7"
+        nom = f"blink2temp-{version}-windows-x64.zip"
+        url = f"https://github.com/nico579/blink2temp/releases/download/v{version}/{nom}"
+        assets = [{
+            "name": nom,
+            "browser_download_url": url,
+            "size": 1234,
+            "digest": "sha256:" + "a" * 64,
+        }]
+        choix = updater.choisir_archive(assets, version, "windows-x64")
+        self.assertEqual(choix["nom"], nom)
+        self.assertEqual(choix["url"], url)
+        self.assertEqual(choix["sha256"], "a" * 64)
+
+    def test_archive_d_un_autre_depot_refusee(self):
+        version = "9.8.7"
+        nom = f"blink2temp-{version}-linux-x64.tar.gz"
+        assets = [{
+            "name": nom,
+            "browser_download_url": f"https://github.com/autre/depot/releases/download/v{version}/{nom}",
+            "size": 1234,
+            "digest": "sha256:" + "b" * 64,
+        }]
+        self.assertEqual(updater.choisir_archive(assets, version, "linux-x64"), {})
+
+    def test_chemin_archive_dangereux_refuse(self):
+        with tempfile.TemporaryDirectory() as dossier:
+            racine = Path(dossier)
+            with self.assertRaises(updater.UpdaterError):
+                updater._destination_sure(racine, "../evasion.txt")
+            with self.assertRaises(updater.UpdaterError):
+                updater._destination_sure(racine, "/etc/passwd")
+
+    def test_extraction_zip_refuse_traversee(self):
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as dossier:
+            racine = Path(dossier)
+            archive = racine / "piege.zip"
+            with zipfile.ZipFile(archive, "w") as paquet:
+                paquet.writestr("../evasion.txt", "x")
+            with self.assertRaises(updater.UpdaterError):
+                updater._extraire(archive, racine / "sortie")
+            self.assertFalse((racine.parent / "evasion.txt").exists())
+
+    def test_instantane_sans_reseau(self):
+        etat = updater.etat()
+        self.assertIn("version_locale", etat)
+        self.assertIn("disponible", etat)
+        self.assertIn("etape", etat)
 
 
 if __name__ == "__main__":

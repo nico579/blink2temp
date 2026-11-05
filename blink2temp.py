@@ -30,6 +30,7 @@ import collector  # noqa: E402
 import config  # noqa: E402
 import scheduler  # noqa: E402
 from storage import Storage  # noqa: E402
+import updater  # noqa: E402
 import web  # noqa: E402
 
 
@@ -198,11 +199,30 @@ def parse_args() -> argparse.Namespace:
         "--task-status", action="store_true",
         help="Vérifie si la tâche planifiée Windows est installée.",
     )
+    parser.add_argument(
+        "--version", action="store_true",
+        help="Affiche la version de Blink2Temp et quitte.",
+    )
+    parser.add_argument(
+        "--finaliser-maj", nargs=3, metavar=("DOSSIER", "PID", "ARGUMENTS"),
+        help=argparse.SUPPRESS,  # usage interne de la mise à jour
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+
+    # Réponses immédiates, sans bannière ni accès à la base de données :
+    # --version est utilisé pour vérifier un exécutable de mise à jour, et
+    # --finaliser-maj est la seconde moitié de l'installation.
+    if args.version:
+        print(f"blink2temp {updater.version_locale()}")
+        return 0
+    if args.finaliser_maj:
+        return updater.finaliser(*args.finaliser_maj)
+
+    updater.nettoyer_restes()
     afficher_banniere()
     storage = Storage()
     cfg = config.charger_config()

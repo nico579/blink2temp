@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def check():
     version = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
     assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'VERSION must contain a semantic version'
+    racine = ROOT.parent / 'VERSION'
+    assert racine.is_file(), 'VERSION à la racine du projet manquant'
+    assert racine.read_text(encoding='utf-8').strip() == version, \
+        'VERSION à la racine et android/VERSION doivent être identiques'
     gradle = (ROOT / 'app/build.gradle.kts').read_text(encoding='utf-8')
     assert 'versionName = rootProject.file("VERSION").readText().trim()' in gradle
     assert 'applicationId = "com.nico.blink2temp"' in gradle

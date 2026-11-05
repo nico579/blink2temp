@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import threading
+import time
 import urllib.parse
 from typing import Any
 
@@ -21,6 +22,7 @@ import collector
 import config
 import paths
 from storage import Storage
+import updater
 
 HTML_PAGE = """<!DOCTYPE html>
 <html lang="fr">
@@ -81,6 +83,21 @@ HTML_PAGE = """<!DOCTYPE html>
             display: flex;
             gap: 12px;
             flex-wrap: wrap;
+        }
+        .version-label {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            margin-top: 6px;
+            letter-spacing: 0.02em;
+        }
+        .btn-maj-disponible {
+            background-color: var(--accent-green) !important;
+            color: #052e16 !important;
+            animation: pulse-maj 2s ease-in-out infinite;
+        }
+        @keyframes pulse-maj {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35); }
+            50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
         }
         .wake-setting {
             display: flex;
@@ -250,32 +267,6 @@ HTML_PAGE = """<!DOCTYPE html>
             gap: 8px;
             flex-wrap: wrap;
         }
-        .period-selector {
-            display: flex;
-            background: #0f172a;
-            padding: 4px;
-            border-radius: 8px;
-            gap: 3px;
-        }
-        .period-btn {
-            background: transparent;
-            color: var(--text-muted);
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.82rem;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-        }
-        .period-btn:hover {
-            color: #ffffff;
-        }
-        .period-btn.active {
-            background: var(--primary);
-            color: #0f172a;
-            font-weight: 700;
-        }
-
         .chart-wrapper {
             position: relative;
             width: 100%;
@@ -526,8 +517,12 @@ HTML_PAGE = """<!DOCTYPE html>
             <div class="title-block">
                 <h1>🌡️ Blink2Temp</h1>
                 <p>Surveillance, graphiques interactifs et historique horaire des températures extérieures</p>
+                <p id="version-app" class="version-label"></p>
             </div>
             <div class="header-actions">
+                <button id="btn-maj" class="btn btn-secondary" onclick="actionMaj()" title="Installer la dernière version depuis GitHub">
+                    ⬆️ Vérifier la mise à jour
+                </button>
                 <button id="btn-refresh" onclick="declencherReleve()">
                     🔄 Relever maintenant
                 </button>
@@ -561,13 +556,6 @@ HTML_PAGE = """<!DOCTYPE html>
                     📈 Courbes des Températures
                 </div>
                 <div class="toolbar-group">
-                    <div class="period-selector">
-                        <button class="period-btn active" onclick="definirPresetPeriode(24, this)">24h</button>
-                        <button class="period-btn" onclick="definirPresetPeriode(72, this)">3 jours</button>
-                        <button class="period-btn" onclick="definirPresetPeriode(168, this)">7 jours</button>
-                        <button class="period-btn" onclick="definirPresetPeriode(720, this)">30 jours</button>
-                        <button class="period-btn" onclick="definirPresetPeriode('all', this)">Tout</button>
-                    </div>
                     <div class="date-picker-group">
                         <span>Du</span>
                         <input type="date" id="input-date-debut" onchange="appliquerPlageDate()">
@@ -725,6 +713,12 @@ HTML_PAGE = """<!DOCTYPE html>
         let tempsMinTotal = 0;
         let tempsMaxTotal = 0;
 
+        // Plage de données demandée au serveur ("all" = tout l'historique).
+        // Elle est réutilisée lors des rafraîchissements automatiques pour ne pas
+        // écraser un filtre de dates ni le zoom en cours.
+        let plageCourante = { heures: "all", debut: null, fin: null };
+        let vueInitialisee = false;
+
         // Interaction souris sur le graphique principal
         let isDraggingMain = false;
         let isDraggingAxis = false;
@@ -761,6 +755,158 @@ HTML_PAGE = """<!DOCTYPE html>
             setTimeout(() => { t.style.display = "none"; }, 3500);
         }
 
+        // ==========================================================
+        // MISE À JOUR DEPUIS LA DERNIÈRE RELEASE GITHUB
+        // ==========================================================
+
+        let majDisponible = null;
+        let majSuivi = null;
+        let majRedemarrageSuivi = false;
+
+        async function recupererEtatMaj(force = false) {
+            const res = await fetch(`/api/maj${force ? "?force=1" : ""}`, { cache: "no-store" });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        function appliquerEtatMaj(etat) {
+            majDisponible = etat.disponible || null;
+            const btn = document.getElementById("btn-maj");
+            const version = document.getElementById("version-app");
+            if (version) version.textContent = `Version ${etat.version_locale || "?"}`;
+            if (!btn) return;
+
+            btn.classList.remove("btn-maj-disponible");
+            const phase = etat.etape || "inactif";
+
+            if (phase === "verification") {
+                btn.disabled = true;
+                btn.textContent = "⏳ Recherche…";
+                return;
+            }
+            if (phase === "telechargement" || phase === "extraction" || phase === "installation") {
+                btn.disabled = true;
+                if (phase === "telechargement") {
+                    btn.textContent = `⬇️ Téléchargement ${Math.round((etat.progression || 0) * 100)} %`;
+                } else if (phase === "extraction") {
+                    btn.textContent = "📦 Vérification de l'archive…";
+                } else {
+                    btn.textContent = "⚙️ Installation…";
+                }
+                return;
+            }
+            if (phase === "redemarrage") {
+                btn.disabled = true;
+                btn.textContent = "♻️ Redémarrage…";
+                surveillerRedemarrage();
+                return;
+            }
+
+            btn.disabled = false;
+            if (majDisponible) {
+                btn.textContent = `⬆️ Mettre à jour ${majDisponible.version}`;
+                btn.classList.add("btn-maj-disponible");
+                btn.title = `Installer Blink2Temp ${majDisponible.version} depuis GitHub`;
+            } else {
+                btn.textContent = "⬆️ Vérifier la mise à jour";
+                btn.title = "Installer la dernière version depuis GitHub";
+            }
+            if (phase === "erreur" && etat.erreur) {
+                afficherToast("⚠️ Mise à jour : " + etat.erreur);
+            }
+        }
+
+        function suivreMaj() {
+            if (majSuivi) return;
+            majSuivi = setInterval(async () => {
+                try {
+                    const etat = await recupererEtatMaj();
+                    appliquerEtatMaj(etat);
+                    if (!["verification", "telechargement", "extraction", "installation", "redemarrage"].includes(etat.etape)) {
+                        clearInterval(majSuivi);
+                        majSuivi = null;
+                    }
+                } catch (_) {
+                    // Le serveur s'arrête pour redémarrer : la boucle continue.
+                }
+            }, 1000);
+        }
+
+        async function chargerEtatMaj(force = false) {
+            try {
+                const etat = await recupererEtatMaj(force);
+                appliquerEtatMaj(etat);
+                if (etat.etape === "verification") suivreMaj();
+            } catch (_) {
+                // Vérification non bloquante : le reste du tableau de bord continue.
+            }
+        }
+
+        async function actionMaj() {
+            const btn = document.getElementById("btn-maj");
+            if (!majDisponible) {
+                btn.disabled = true;
+                try {
+                    const etat = await recupererEtatMaj(true);
+                    appliquerEtatMaj(etat);
+                    suivreMaj();
+                    for (let i = 0; i < 40; i++) {
+                        await new Promise(r => setTimeout(r, 500));
+                        const courant = await recupererEtatMaj();
+                        appliquerEtatMaj(courant);
+                        if (courant.etape !== "verification") break;
+                    }
+                } catch (err) {
+                    afficherToast("⚠️ Vérification impossible : " + err);
+                    btn.disabled = false;
+                    return;
+                }
+            }
+
+            if (!majDisponible) {
+                afficherToast("✅ Blink2Temp est à jour.");
+                return;
+            }
+            if (!confirm(`Installer Blink2Temp ${majDisponible.version} ?\n\nL'application va s'arrêter puis redémarrer.`)) {
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "⬇️ Préparation…";
+            try {
+                const res = await fetch("/api/maj", { method: "POST" });
+                const etat = await res.json();
+                if (!res.ok) {
+                    appliquerEtatMaj(await recupererEtatMaj());
+                    afficherToast("⚠️ " + (etat.erreur || "Mise à jour refusée."));
+                    return;
+                }
+                appliquerEtatMaj(etat);
+                suivreMaj();
+            } catch (err) {
+                afficherToast("⚠️ Impossible de lancer la mise à jour : " + err);
+                btn.disabled = false;
+            }
+        }
+
+        async function surveillerRedemarrage() {
+            if (majRedemarrageSuivi) return;
+            majRedemarrageSuivi = true;
+            for (let i = 0; i < 120; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                try {
+                    const res = await fetch("/api/maj", { cache: "no-store" });
+                    if (res.ok) {
+                        location.reload();
+                        return;
+                    }
+                } catch (_) {
+                    // Encore en redémarrage.
+                }
+            }
+            afficherToast("⚠️ Le redémarrage prend trop de temps. Relancez Blink2Temp.");
+        }
+
         async function chargerDonneesInitiales() {
             try {
                 const [resLatest, resVisibilite] = await Promise.all([
@@ -771,7 +917,14 @@ HTML_PAGE = """<!DOCTYPE html>
                 cameraVisibiliteServeur = await resVisibilite.json() || {};
                 afficherCartes(cartes);
 
-                await chargerHistorique(24);
+                // À l'ouverture : tout l'historique, avec la courbe entière visible.
+                // Ensuite : on conserve le zoom et le filtre de dates en cours.
+                await chargerHistorique(
+                    plageCourante.heures,
+                    plageCourante.debut,
+                    plageCourante.fin,
+                    !vueInitialisee
+                );
             } catch (err) {
                 console.error("Erreur de chargement initial:", err);
             }
@@ -827,7 +980,9 @@ HTML_PAGE = """<!DOCTYPE html>
             }).join("");
         }
 
-        async function chargerHistorique(heures, debut = null, fin = null) {
+        async function chargerHistorique(heures, debut = null, fin = null, ajusterVue = true) {
+            plageCourante = { heures, debut, fin };
+
             let url = "/api/history?";
             if (debut && fin) {
                 url += `start=${encodeURIComponent(debut)}&end=${encodeURIComponent(fin)}`;
@@ -839,8 +994,16 @@ HTML_PAGE = """<!DOCTYPE html>
                 const res = await fetch(url);
                 donneesBrutes = await res.json();
                 traiterDonnees();
-                reinitialiserZoom();
+                if (ajusterVue) {
+                    reinitialiserZoom();
+                } else {
+                    recalculerBornesTotales();
+                    mettreAJourZoomUI();
+                    dessinerGraphique();
+                    dessinerFriseChronologique();
+                }
                 mettreAJourStats();
+                vueInitialisee = true;
             } catch (err) {
                 console.error("Échec du chargement de l'historique:", err);
             }
@@ -935,7 +1098,7 @@ HTML_PAGE = """<!DOCTYPE html>
             sauvegarderVisibilite();
         }
 
-        function reinitialiserZoom() {
+        function recalculerBornesTotales() {
             const tousTemps = [];
             Object.keys(seriesParCamera).forEach(nom => {
                 if (!cameraVisibilite[nom]) return;
@@ -953,6 +1116,10 @@ HTML_PAGE = """<!DOCTYPE html>
                     tempsMaxTotal += 1800 * 1000;
                 }
             }
+        }
+
+        function reinitialiserZoom() {
+            recalculerBornesTotales();
 
             tempsMinVue = tempsMinTotal;
             tempsMaxVue = tempsMaxTotal;
@@ -1524,24 +1691,16 @@ HTML_PAGE = """<!DOCTYPE html>
             tooltip.style.top = posY + "px";
         }
 
-        function definirPresetPeriode(heures, btn) {
-            document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
-            if (btn) btn.classList.add("active");
-
-            document.getElementById("input-date-debut").value = "";
-            document.getElementById("input-date-fin").value = "";
-
-            chargerHistorique(heures);
-        }
-
         function appliquerPlageDate() {
             const d1 = document.getElementById("input-date-debut").value;
             const d2 = document.getElementById("input-date-fin").value;
             if (d1 && d2) {
-                document.querySelectorAll(".period-btn").forEach(b => b.classList.remove("active"));
                 const dateDebutIso = new Date(d1 + "T00:00:00").toISOString();
                 const dateFinIso = new Date(d2 + "T23:59:59").toISOString();
                 chargerHistorique(null, dateDebutIso, dateFinIso);
+            } else if (!d1 && !d2) {
+                // Champs vidés : retour à tout l'historique.
+                chargerHistorique("all");
             }
         }
 
@@ -1618,6 +1777,7 @@ HTML_PAGE = """<!DOCTYPE html>
         window.addEventListener("DOMContentLoaded", () => {
             redimensionnerCanvas();
             chargerReglages();
+            chargerEtatMaj();
             chargerDonneesInitiales();
             setInterval(chargerDonneesInitiales, 60000);
         });
@@ -1646,6 +1806,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if chemin == "/api/latest":
             data = self.storage.obtenir_dernieres_temperatures(outdoor_only=True)
             self._repondre_json(data)
+            return
+
+        if chemin == "/api/maj":
+            force = query.get("force", ["0"])[0] in ("1", "true", "oui")
+            updater.verifier_async(force=force)
+            self._repondre_json(updater.etat())
             return
 
         if chemin == "/api/history":
@@ -1696,6 +1862,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+
+        if parsed.path == "/api/maj":
+            try:
+                updater.installer_async()
+            except updater.UpdaterError as err:
+                self._repondre_json(
+                    {"ok": False, "erreur": str(err), **updater.etat()},
+                    status=HTTPStatus.CONFLICT,
+                )
+                return
+            self._repondre_json(
+                {"ok": True, **updater.etat()}, status=HTTPStatus.ACCEPTED
+            )
+            return
+
         if parsed.path == "/api/reglages":
             try:
                 length = int(self.headers.get("Content-Length", 0) or 0)
@@ -1794,7 +1975,20 @@ def demarrer_serveur_web(storage: Storage, port: int = 8770, daemon: bool = True
             self.lock = lock
             super().__init__(*args, **kwargs)
 
-    serveur = ThreadingHTTPServer(("0.0.0.0", port), HandlerAvecDep)
+    serveur = None
+    derniere_erreur: OSError | None = None
+    # Après une mise à jour, le nouveau processus démarre alors que l'ancien
+    # vient de rendre le port : quelques secondes de patience suffisent.
+    for _ in range(30):
+        try:
+            serveur = ThreadingHTTPServer(("0.0.0.0", port), HandlerAvecDep)
+            break
+        except OSError as err:
+            derniere_erreur = err
+            time.sleep(1)
+    if serveur is None:
+        raise derniere_erreur or OSError(f"Port {port} indisponible")
+
     thread = threading.Thread(target=serveur.serve_forever, daemon=daemon)
     thread.start()
     return serveur

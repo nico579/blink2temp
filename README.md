@@ -32,7 +32,7 @@ Développée en s'appuyant sur l'architecture et les principes de robustesse du 
        - **Frise chronologique inférieure (minimap)** : Cliquez ou glissez directement sur le bandeau temporel en bas du graphique pour naviguer instantanément à n'importe quelle date.
        - **Boutons de navigation transversale** : Boutons `◀ Reculer` et `Avancer ▶` pour décaler le temps d'un quart de vue par clic.
      - 🎯 **Double-clic ou bouton** : Réinitialise instantanément la vue à la période sélectionnée.
-     - 🔍 **Sélecteurs de plages** : Boutons rapides (24h, 3 jours, 7 jours, 30 jours, Tout) et sélecteur de dates début/fin.
+     - 🔍 **Sélecteur de dates** : choisissez librement une date de début et de fin (champs vidés = tout l'historique).
      - 📌 **Survol & HUD Tooltip** : Ligne guide verticale et infobulle affichant l'horodatage exact et la température de chaque caméra.
      - 👁️ **Légende filtrable** : Cliquez sur le nom d'une caméra pour masquer ou afficher sa courbe.
      - ⚡ **100% autonome** : Rendu Canvas fluide 60fps sans aucune dépendance externe ou CDN (fonctionne hors-ligne).
@@ -46,6 +46,12 @@ Développée en s'appuyant sur l'architecture et les principes de robustesse du 
    - Prise en charge d'une tâche planifiée Windows en arrière-plan (`schtasks`) via `--install-task`.
    - Lanceur interactif double-cliquable : `lancer_blink2temp.bat`.
 
+6. **Mise à jour depuis GitHub** :
+   - Bouton **« Mettre à jour »** dans le tableau de bord, aligné sur la dernière release publiée du dépôt.
+   - Vérification silencieuse et mise en cache (six heures), sans bloquer l'interface ni le relevé.
+   - Archive de la plateforme téléchargée, empreinte SHA-256 vérifiée, nouvel exécutable testé (`--version`) avant tout remplacement, puis redémarrage automatique avec les mêmes arguments.
+   - Depuis les sources (dépôt git), l'équivalent est un `git pull --ff-only` : rien n'est modifié si le tirage échoue.
+
 ---
 
 ## 📦 Structure des fichiers
@@ -57,6 +63,8 @@ C:\Users\Nico\Documents\blink2temp\
 ├── storage.py             # Gestionnaire de base de données SQLite (temperatures.db)
 ├── scheduler.py           # Boucle d'attente horaire et gestion des signaux d'arrêt
 ├── web.py                 # Serveur HTTP local et tableau de bord interactif
+├── updater.py             # Mise à jour depuis la dernière release GitHub
+├── VERSION                # Version de l'application (alignée sur android/VERSION)
 ├── blink_auth.py          # Authentification Blink, 2FA et reprise de session
 ├── blink_tls.py           # Contexte TLS strict avec certifi
 ├── autostart.py           # Gestion de la tâche planifiée Windows
@@ -116,6 +124,34 @@ python tools\package_bundle.py --artifact windows-x64
 - `.github/workflows/release.yml` : sur un tag `vX.Y.Z`, signe l'APK et l'AAB
   avec la clé de gpx2elev, construit les bundles, vérifie signatures, tests et
   empreintes SHA-256, puis publie la release GitHub.
+
+## ⬆️ Mise à jour intégrée
+
+Le tableau de bord affiche la version en cours et un bouton **« Vérifier la
+mise à jour »** :
+
+1. La vérification interroge `releases/latest` au plus une fois toutes les six
+   heures (réponse mise en cache, donc l'interface ne dépend jamais du réseau).
+2. Si une version plus récente existe, le bouton devient vert et affiche son
+   numéro. Un clic confirme, télécharge l'archive de la plateforme et vérifie
+   son empreinte SHA-256.
+3. Le nouvel exécutable est démarré une première fois en `--version` pour
+   s'assurer qu'il fonctionne, puis un petit processus de finalisation attend
+   l'arrêt de l'ancienne version, remplace le binaire et relance Blink2Temp
+   avec les mêmes arguments. Les données (`temperatures.db`, `config.json`,
+   session Blink) ne sont jamais touchées.
+
+Depuis une installation en sources (dépôt git), le bouton exécute
+`git pull --ff-only` puis relance l'application. En cas de modifications
+locales, git refuse : rien n'est modifié. Les versions publiées avant
+l'ajout du fichier `VERSION` ne peuvent pas être mises à jour automatiquement
+vers elles-mêmes ; la mise à jour fonctionne à partir de la version suivante.
+
+En ligne de commande :
+
+```powershell
+python blink2temp.py --version
+```
 
 ---
 

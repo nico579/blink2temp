@@ -50,6 +50,12 @@ def _intercepter_signaux():
     signal.signal(signal.SIGTERM, _gestionnaire)
 
 
+def demander_arret():
+    """Demande l'arrêt propre de la boucle depuis un autre fil (ex: mise à jour)."""
+    global _ARRET_DEMANDE
+    _ARRET_DEMANDE = True
+
+
 def arret_demande() -> bool:
     return _ARRET_DEMANDE
 

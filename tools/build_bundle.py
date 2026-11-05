@@ -30,6 +30,7 @@ def main() -> int:
         "--specpath", str(BUILD),
         "--collect-all", "blinkpy",
         "--collect-all", "certifi",
+        "--add-data", f"{ROOT / 'VERSION'}{os.pathsep}.",
         str(ROOT / "blink2temp.py"),
     ]
     subprocess.run(command, cwd=ROOT, check=True)
