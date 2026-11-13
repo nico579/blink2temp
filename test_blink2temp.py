@@ -416,6 +416,15 @@ class TestWebDashboard(unittest.TestCase):
             self.assertEqual(data, [])
 
 
+class TestUniteDesEnTetes(unittest.TestCase):
+    def test_les_en_tetes_de_la_synthese_n_affichent_pas_un_gabarit_brut(self):
+        # Le tableau de synthèse affichait « Min (${UNITE_TEMP}) » : un gabarit
+        # JavaScript dans du HTML statique, jamais interprété.
+        self.assertNotIn("(${UNITE_TEMP})", web.HTML_PAGE)
+        self.assertEqual(web.HTML_PAGE.count('<span class="unite-temp">'), 3)
+        self.assertIn('querySelectorAll(".unite-temp")', web.HTML_PAGE)
+
+
 class TestMiseAJour(unittest.TestCase):
     def test_comparaison_versions(self):
         self.assertGreater(updater.numeros("1.6.10"), updater.numeros("1.6.9"))
