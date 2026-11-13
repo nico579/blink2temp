@@ -585,9 +585,9 @@ HTML_PAGE = """<!DOCTYPE html>
                     <tr>
                         <th>Caméra</th>
                         <th>Modèle</th>
-                        <th>Min (${UNITE_TEMP})</th>
-                        <th>Moyenne (${UNITE_TEMP})</th>
-                        <th>Max (${UNITE_TEMP})</th>
+                        <th>Min (<span class="unite-temp">°C</span>)</th>
+                        <th>Moyenne (<span class="unite-temp">°C</span>)</th>
+                        <th>Max (<span class="unite-temp">°C</span>)</th>
                         <th>Mesures</th>
                     </tr>
                 </thead>
@@ -628,6 +628,10 @@ HTML_PAGE = """<!DOCTYPE html>
         })();
         const UTILISE_FAHRENHEIT = TERRITOIRES_FAHRENHEIT.has(REGION_NAVIGATEUR);
         const UNITE_TEMP = UTILISE_FAHRENHEIT ? "°F" : "°C";
+        // Les en-têtes du tableau de synthèse sont du HTML statique : un
+        // gabarit « ${UNITE_TEMP} » y restait affiché tel quel. L'unité s'y
+        // écrit ici, une fois connue.
+        document.querySelectorAll(".unite-temp").forEach((e) => { e.textContent = UNITE_TEMP; });
         // Convertit une température °C vers l'unité du navigateur (null conservé)
         function versUnite(tempC) {
             if (tempC === null || tempC === undefined) return null;

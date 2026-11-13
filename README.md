@@ -4,6 +4,19 @@ Application de surveillance et de relevé automatique des températures des **ca
 
 Développée en s'appuyant sur l'architecture et les principes de robustesse du projet `blink` / `blink2video`.
 
+## 📸 Captures d'écran
+
+Le tableau de bord web : la dernière mesure de chaque caméra, puis la courbe de
+toutes les relèves, que l'on zoome à la molette et que l'on déplace à la souris.
+
+![Tableau de bord web de Blink2Temp : trois caméras et la courbe de dix jours de relèves](screenshots/web.png)
+
+L'application Android : la caméra, sa dernière mesure, et la courbe des 6
+dernières heures, des 24 dernières ou des 7 derniers jours, avec le minimum, la
+moyenne et le maximum de la période.
+
+<img src="screenshots/android.png" alt="Application Android de Blink2Temp : la caméra jardin, sa courbe de 24 heures et ses statistiques" width="320">
+
 ---
 
 ## 🚀 Fonctionnalités principales
